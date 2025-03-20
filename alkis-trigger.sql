@@ -63,7 +63,11 @@ BEGIN
 			INTO beginnt;
 
 		IF beginnt IS NULL THEN
-			RAISE EXCEPTION '%: Keinen Kandidaten zum Löschen gefunden.', NEW.featureid;
+			EXECUTE format('INSERT INTO %I.%I (typename, featureid)
+							VALUES (%L, %L)',
+							TG_TABLE_SCHEMA,'ak_object_not_found',
+							NEW.typename,NEW.featureid);
+			RETURN NULL;
 		END IF;
 	ELSE
 		RAISE EXCEPTION '%: Identifikator gescheitert.', NEW.featureid;

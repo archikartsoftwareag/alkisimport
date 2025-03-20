@@ -1,4 +1,4 @@
-/***************************************************************************
+﻿/***************************************************************************
  *                                                                         *
  * Projekt:  norGIS ALKIS Import                                           *
  * Zweck:    Initialisierung des ALKIS-Schema                              *
@@ -40,7 +40,6 @@ COMMENT ON TABLE alkis_version IS 'ALKIS: Schemaversion';
 -- BW/BY-Koordinatensystem anlegen
 SELECT alkis_create_bsrs(:alkis_epsg);
 
-\i alkis-archikart.sql
 \i alkis-trigger.sql
 \i alkis-schema.sql
 
