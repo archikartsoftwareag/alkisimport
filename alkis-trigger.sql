@@ -63,10 +63,10 @@ BEGIN
 			INTO beginnt;
 
 		IF beginnt IS NULL THEN
-			EXECUTE format('INSERT INTO %I.%I (typename, featureid)
-							VALUES (%L, %L)',
+			EXECUTE format('INSERT INTO %I.%I (typename, context, featureid)
+							VALUES (%L, %L, %L)',
 							TG_TABLE_SCHEMA,'ak_object_not_found',
-							NEW.typename,NEW.featureid);
+							NEW.typename, NEW.context, NEW.featureid);
 			RETURN NULL;
 		END IF;
 	ELSE

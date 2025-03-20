@@ -68,6 +68,7 @@ DROP TABLE IF EXISTS ak_object_not_found;
 CREATE TABLE ak_object_not_found (
 	id serial NOT NULL,
 	typename varchar NOT NULL,
+	context varchar NOT NULL,
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
