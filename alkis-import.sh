@@ -413,6 +413,7 @@ log=
 preprocessed=0
 sfre=
 slot_token="<new-slot>"
+dumpxfile=
 
 export job=
 export tmpdir=
@@ -937,7 +938,7 @@ do
 		continue
 		;;
 
-	dump|"dump "*)
+	dump|"dump "*|"dumpx "*)
 		if [ -z "$DB" ]; then
 			echo "$P: Keine Datenbankverbindungsdaten angegeben" >&2
 			exit 1
@@ -945,14 +946,21 @@ do
 
 		if [ "$src" = "dump" ]; then
 			src="alkis-%Y-%m-%d-%H-%M"
+		elif [[ "$src" = "dumpx "* ]]; then
+			src=${src#dumpx }
+			dumpxfile=$src
 		else
 			src=${src#dump }
 		fi
 
 		src=$(bdate +$src)
 
-		echo "DUMPING $(bdate)"
-		dump "$src"
+		if [ -z "$dumpxfile" ]; then
+			echo "DUMPING $(bdate)"
+			dump "$src"
+		else
+			dumpxfile=$src
+		fi
 
 		continue
 		;;
@@ -995,6 +1003,9 @@ elif [ "$src" != "exit" ]; then
 		if ! rund postprocessing; then
 			echo "FEHLER BEIM POSTPROCESSING"
 			src=error
+		elif [ ! -z "$dumpxfile" ]; then
+			echo "DUMPING $(bdate)"
+			dump "$dumpxfile"
 		fi
 	fi
 
