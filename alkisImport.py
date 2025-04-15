@@ -174,13 +174,14 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
 
         self.cbFnbruch.setCurrentIndex(0 if s.value("fnbruch", True, type=bool) else 1)
         self.cbPgVerdraengen.setCurrentIndex(1 if s.value("pgverdraengen", False, type=bool) else 0)
-        self.cbxUseCopy.setChecked(s.value("usecopy", True, type=bool))
-        self.cbxAvoidDupes.setChecked(s.value("avoiddupes", False, type=bool))
+        self.cbxUseCopy.setChecked(s.value("usecopy", False, type=bool))
+        self.cbxAvoidDupes.setChecked(s.value("avoiddupes", True, type=bool))
         self.cbxCreate.setChecked(False)
         self.cbxClean.setChecked(False)
         self.cbxHistorie.setDisabled(True)
         self.cbxHistorie.setChecked(s.value("historie", True, type=bool))
         self.cbxQuittierung.setChecked(s.value("quittierung", False, type=bool))
+        self.cbxTransform.setChecked(s.value("transform", False, type=bool))
 
         self.cbEPSG.addItem("UTM32N", "25832")
         self.cbEPSG.addItem("UTM33N", "25833")
@@ -192,7 +193,7 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
         self.cbEPSG.addItem("DHDN GK4 (BY)", "31468")
         self.cbEPSG.addItem("Soldner-Berlin (vortransformiert)", "3068")
         self.cbEPSG.addItem("Soldner-Berlin (transformieren)", "13068")
-        self.cbEPSG.setCurrentIndex(self.cbEPSG.findData(s.value("epsg", "25832")))
+        self.cbEPSG.addItem("Benutzer-EPSG", "-1")
 
         self.pbAdd.clicked.connect(self.selFiles)
         self.pbAddDir.clicked.connect(self.selDir)
@@ -202,6 +203,15 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
         self.pbSave.clicked.connect(self.saveList)
         self.lstFiles.itemSelectionChanged.connect(self.selChanged)
         self.cbxSkipFailures.toggled.connect(self.skipFailuresToggled)
+        self.cbEPSG.currentIndexChanged.connect(self.epsgChanged)
+        self.cbxCreate.toggled.connect(self.createChanged)
+
+        epsg = s.value("epsg", "25832")
+        i = self.cbEPSG.findData(epsg)
+        if i == -1:
+            i = self.cbEPSG.findData("-1")
+            self.leCustomEpsg.setText(str(epsg))
+        self.cbEPSG.setCurrentIndex(i)
 
         self.pbStart.clicked.connect(self.run)
         self.pbLoadLog.clicked.connect(self.loadLog)
@@ -365,6 +375,16 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                 line = os.path.join(os.path.dirname(fn), line)
             self.lstFiles.addItem(os.path.abspath(line))
         f.close()
+
+    def createChanged(self):
+        self.cbEPSG.setEnabled(self.cbxCreate.isChecked())
+        self.cbxHistorie.setEnabled(self.cbxCreate.isChecked())
+        self.cbxClean.setEnabled(not self.cbxCreate.isChecked())
+        self.cbxTransform.setEnabled(self.cbxCreate.isChecked())
+        self.epsgChanged()
+
+    def epsgChanged(self):
+        self.leCustomEpsg.setEnabled(self.cbxCreate.isChecked() and self.cbEPSG.currentIndex() == self.cbEPSG.findData("-1"))
 
     def selChanged(self):
         self.pbRemove.setDisabled(len(self.lstFiles.selectedItems()) == 0)
@@ -626,16 +646,24 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
 
         return ok
 
+    # INSERT…ON CONFLICT DO NOTHING nur verwendbar mit GDAL>=3.10, PostgreSQL>=9.5 und ohne COPY
+    def useonconflict(self):
+        return self.avoiddupes and not self.usecopy and (self.GDAL_MAJOR > 3 or (self.GDAL_MAJOR == 3 and self.GDAL_MINOR >= 10)) and (self.PG_MAJOR > 9 or (self.PG_MAJOR == 9 and self.PG_MINOR >= 5))
+
     def runSQLScript(self, conn, fn, parallel=False):
+        # Trigger nur, wenn OGR_PG_SKIP_CONFLICTS nicht möglich ist
+        avoiddupes = self.avoiddupes and not self.useonconflict()
+
         return self.runProcess([
             self.psql,
             "-v", "alkis_epsg={}".format(3068 if self.epsg == 13068 else self.epsg),
+            "-v", "alkis_transform={}".format(self.transform),
             "-v", "alkis_schema={}".format(self.schema),
             "-v", "postgis_schema={}".format(self.pgschema),
             "-v", "parent_schema={}".format(self.parentschema if self.parentschema else self.schema),
             "-v", "alkis_fnbruch={}".format("true" if self.fnbruch else "false"),
             "-v", "alkis_pgverdraengen={}".format("true" if self.pgverdraengen else "false"),
-            "-v", "alkis_avoiddupes={}".format("true" if self.avoiddupes else "false"),
+            "-v", "alkis_avoiddupes={}".format("true" if avoiddupes else "false"),
             "-v", "alkis_hist={}".format("true" if self.historie else "false"),
             "-v", "ON_ERROR_STOP=1",
             "-v", "ECHO=errors",
@@ -667,6 +695,10 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
 
         self.schema = self.leSCHEMA.text()
         self.pgschema = self.lePGSCHEMA.text()
+
+        if self.schema == "":
+            self.log("Kein ALKIS-Schema angegeben")
+            return None
 
         qry = self.db.exec_("SELECT 1 FROM pg_namespace WHERE nspname='{}'".format(self.schema.replace("'", "''")))
         if not qry:
@@ -731,7 +763,8 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
         s.setValue("files_sf", checked)
 
         s.setValue("skipfailures", self.cbxSkipFailures.isChecked())
-        s.setValue("usecopy", self.cbxUseCopy.isChecked())
+        self.usecopy = self.cbxUseCopy.isChecked()
+        s.setValue("usecopy", self.usecopy)
 
         self.avoiddupes = self.cbxAvoidDupes.isChecked()
         s.setValue("avoiddupes", self.avoiddupes)
@@ -748,7 +781,12 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
         self.quittierung = self.cbxQuittierung.isChecked()
         s.setValue("quittierung", self.quittierung)
 
+        self.transform = self.cbxTransform.isChecked()
+        s.setValue("transform", self.transform)
+
         self.epsg = int(self.cbEPSG.itemData(self.cbEPSG.currentIndex()))
+        if self.epsg == -1:
+            self.epsg = int(self.leCustomEpsg.text())
         s.setValue("epsg", self.epsg)
 
         self.running = True
@@ -769,7 +807,6 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         id_quittierung = None
-        i_quittierung = 0
 
         while True:
             t0 = QElapsedTimer()
@@ -783,12 +820,35 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
             if conn is None:
                 break
 
-            self.db.exec_("SET application_name='ALKIS-Import - Frontend'")
-            self.db.exec_("SET client_min_messages TO notice")
+            qry = self.db.exec_("SELECT version()")
+
+            if not qry or not qry.next():
+                self.log("Konnte PostgreSQL-Version nicht bestimmen!")
+                break
+
+            self.log("Datenbank-Version: {}".format(qry.value(0)))
+
+            m = re.search("PostgreSQL (\\d+)\\.(\\d+)", qry.value(0))
+            if not m:
+                self.log("PostgreSQL-Version nicht im erwarteten Format")
+                break
+
+            self.PG_MAJOR = int(m.group(1))
+            self.PG_MINOR = int(m.group(2))
+
+            if self.PG_MAJOR < 8 or (self.PG_MAJOR == 8 and self.PG_MAJOR < 4):
+                self.log("Mindestens PostgreSQL 8.4 erforderlich")
+                break
+
+            if self.PG_MAJOR >= 9:
+                self.db.exec_("SET application_name='ALKIS-Import - Frontend'")
+
+            if self.PG_MAJOR > 9 or (self.PG_MAJOR == 9 and self.PG_MINOR >= 4):
+                self.db.exec_("SET client_min_messages TO notice")
 
             qry = self.db.exec_("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_name='alkis_importlog'")
             if not qry or not qry.next():
-                self.log("Konnte Existenz von Protokolltabelle nicht überprüfen.")
+                self.log("Konnte Existenz der Protokolltabelle nicht überprüfen.")
                 break
 
             if int(qry.value(0)) == 0:
@@ -820,23 +880,6 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                     self.runProcess([git, "log", "-1", "--pretty=Import-Version: %h"])
                 else:
                     self.log("Import-Version: unbekannt")
-
-            qry = self.db.exec_("SELECT version()")
-
-            if not qry or not qry.next():
-                self.log("Konnte PostgreSQL-Version nicht bestimmen!")
-                break
-
-            self.log("Datenbank-Version: {}".format(qry.value(0)))
-
-            m = re.search("PostgreSQL (\\d+)\\.(\\d+)", qry.value(0))
-            if not m:
-                self.log("PostgreSQL-Version nicht im erwarteten Format")
-                break
-
-            if int(m.group(1)) < 8 or (int(m.group(1)) == 8 and int(m.group(2)) < 4):
-                self.log("Mindestens PostgreSQL 8.4 erforderlich")
-                break
 
             qry = self.db.exec_("SELECT postgis_full_version()")
             if not qry or not qry.next():
@@ -897,8 +940,8 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
             # Verhindern, dass der GML-Treiber übernimmt
             os.putenv("OGR_SKIP", "GML")
 
-            GDAL_MAJOR = int(m.group(1))
-            GDAL_MINOR = int(m.group(2))
+            self.GDAL_MAJOR = int(m.group(1))
+            self.GDAL_MINOR = int(m.group(2))
 
             self.psql = which("psql")
             if not self.psql:
@@ -1130,15 +1173,12 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                             "-progress",
                         ]
 
-                        if GDAL_MAJOR < 3 or (GDAL_MAJOR == 3 and GDAL_MINOR < 1):
+                        if self.GDAL_MAJOR < 3 or (self.GDAL_MAJOR == 3 and self.GDAL_MINOR < 1):
                             args.append("PG:{} active_schema={}','{}".format(conn, self.schema, self.pgschema))
                         else:
                             args.append("PG:{0} schemas='{1},{2}' active_schema={1}".format(conn, self.schema, self.pgschema))
 
-                        if int(self.leGT.text() or '0') >= 1:
-                            args.extend(["-gt", self.leGT.text()])
-
-                        if GDAL_MAJOR >= 3:
+                        if self.GDAL_MAJOR >= 3:
                             if self.epsg == 131466 or self.epsg == 131467 or self.epsg == 131468:
                                 args.extend(["-a_srs", os.path.join(BASEDIR, "{}.prj".format(self.epsg))])
 
@@ -1182,7 +1222,12 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                             self.log("WARNUNG: Importfehler werden ignoriert")
                             args.extend(["-skipfailures", "--config", "PG_USE_COPY", "NO"])
                         else:
-                            args.extend(["--config", "PG_USE_COPY", "YES" if self.cbxUseCopy.isChecked() else "NO"])
+                            if int(self.leGT.text() or '0') >= 1:
+                                args.extend(["-gt", self.leGT.text()])
+                            args.extend(["--config", "PG_USE_COPY", "YES" if self.usecopy else "NO"])
+
+                        if self.useonconflict():
+                            args.extend(["--config", "OGR_PG_SKIP_CONFLICTS", "YES"])
 
                         args.extend(["-nlt", "CONVERT_TO_LINEAR", "-ds_transaction"])
 
@@ -1191,8 +1236,8 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                             if ffdate is not None:
                                 args.extend(["-doo", f"PRELUDE_STATEMENTS=CREATE TEMPORARY TABLE deletedate AS SELECT '{ffdate}'::character(20) AS endet"])
                                 self.log(f"{fn}: Fortführungsdatum {ffdate}")
-                        except Exception as e:
-                            pass
+                        except Exception:
+                            ffdate = None
 
                         args.append(src)
 
@@ -1203,6 +1248,16 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
 
                         ok = self.runProcess(args)
 
+                        if ok:
+                            if qry.prepare("INSERT INTO alkis_importe(filename,datadate) VALUES (?,?)"):
+                                qry.addBindValue(fn)
+                                qry.addBindValue(ffdate)
+                                if not qry.exec_():
+                                    self.log("Konnte Import nicht speichern! [{}]".format(qry.lastError().text()))
+                                    break
+                            else:
+                                self.log("Konnte Speichern des Imports nicht vorbereiten! [{}]".format(qry.lastError().text()))
+                                break
                         try:
                             os.unlink(src[:-4] + ".gfs")
                         except OSError:
@@ -1234,8 +1289,10 @@ class alkisImportDlg(QDialog, alkisImportDlgBase):
                             if qry and qry.next():
                                 id_quittierung = qry.value(0)
 
-                        self.runProcess([sys.executable, os.path.join(BASEDIR, "quittierung.py"), ".", src, "ID_{:08d}".format(i_quittierung), str(id_quittierung), "true" if ok else "false"])
-                        i_quittierung += 1
+                        if not self.runProcess([sys.executable, os.path.join(BASEDIR, "quittierung.py"), ".", src, str(id_quittierung), "true" if ok else "false"]):
+                            self.log("Quittierung gescheitert!")
+                            ok = False
+                            break
 
                     item.setSelected(ok)
                     if src != fn and os.path.exists(src):

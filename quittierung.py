@@ -29,21 +29,20 @@ key = "geaenderteObjekte"
 
 
 def usage(msg=None):
-    print("Usage: {} verzeichnis eingabe gml_id impid status".format(sys.argv[0]), file=sys.stderr)
+    print("Usage: {} verzeichnis eingabe impid status".format(sys.argv[0]), file=sys.stderr)
     if msg is not None:
         print("  error: {}".format(msg), file=sys.stderr)
     print("  verzeichnis: Quittierungsverzeichnis", file=sys.stderr)
     print("  eingabe: zu quittierende Eingabedatei", file=sys.stderr)
-    print("  gml_id: Kennung der Portionsquittierung", file=sys.stderr)
     print("  impid: Quittierungskennung", file=sys.stderr)
     print("  status: true, wenn Portion erfolgreich verarbeitet wurde, sonst false", file=sys.stderr)
     sys.exit(1)
 
 
-if len(sys.argv) != 6:
+if len(sys.argv) != 5:
     usage()
 
-outputdir, inputfile, gml_id, impid, status = sys.argv[1:]
+outputdir, inputfile, impid, status = sys.argv[1:]
 
 if not os.path.exists(inputfile):
     usage("eingabe: Datei {} existiert nicht".format(inputfile))
@@ -91,8 +90,25 @@ nba = et.fromstring(header + footer[(p + 3 + len(key)):], parser)
 if not nba.tag.endswith("AX_NutzerbezogeneBestandsdatenaktualisierung_NBA"):
     usage("AX_NutzerbezogeneBestandsdatenaktualisierung_NBA auf oberster Ebene erwartet. {} gefunden.".format(nba.tag))
 
+prefixes = [
+        './/portionskennung/AX_Portionskennung/profilkennung',
+        './/profilkennung',
+        './/antragsnummer',
+        './/auftragsnummer'
+]
+
+prefix = None
+for i in prefixes:
+    e = nba.find(i, nba.nsmap)
+    if e is not None:
+        prefix = e.text
+        break
+
+if prefix is None:
+    prefix = "quittierung"
+
 outputfile = os.path.join(outputdir, "{}_{}_NBA_Quittierung_ID_{}.xml".format(
-    nba.find('.//portionskennung/AX_Portionskennung/profilkennung', nba.nsmap).text,
+    prefix,
     datetime.strptime(
         nba.find('.//portionskennung/AX_Portionskennung/datum', nba.nsmap).text,
         '%Y-%m-%dT%H:%M:%SZ'
@@ -119,11 +135,7 @@ else:
     af.text = "application/xml"
     q.append(af)
 
-    for n in [
-        './/portionskennung/AX_Portionskennung/profilkennung',
-        './/antragsnummer',
-        './/auftragsnummer'
-    ]:
+    for n in prefixes:
         e = nba.find(n, nba.nsmap)
         if e is not None:
             q.append(deepcopy(e))
@@ -140,7 +152,7 @@ else:
 
 erfolgreich = et.SubElement(q, "portionNBAErfolgreich", nsmap=nba.nsmap)
 
-portion = et.SubElement(erfolgreich, 'AX_Portion_Erfolgreich', attrib={"{%s}id" % nba.nsmap['gml']: gml_id}, nsmap=nba.nsmap)
+portion = et.SubElement(erfolgreich, 'AX_Portion_Erfolgreich', nsmap=nba.nsmap)
 portion.append(nba.find('.//portionskennung', nba.nsmap))
 
 pe = et.SubElement(portion, 'erfolgreich', nsmap=nba.nsmap)

@@ -42,14 +42,17 @@ export PGCLIENTENCODING=UTF8
 export EPSG=25832
 export CRS="-a_srs EPSG:$EPSG"
 export FNBRUCH=true
-export AVOIDDUPES=false
+export AVOIDDUPES=true
 export HISTORIE=true
 export QUITTIERUNG=false
 export PGVERDRAENGEN=false
 export SCHEMA=public
 export PARENTSCHEMA=
 export PGSCHEMA=public
-export USECOPY=YES
+export USECOPY=NO
+export TRANSFORM=false
+export PG_MAJOR=
+export PG_MINOR=
 
 B=${0%/*}   # BASEDIR
 if [ "$0" = "$B" ]; then
@@ -109,8 +112,20 @@ export -f timeunits
 
 log() {
 	python3 $B/refilter.py | tee $1
+	unlock
 }
 export -f log
+
+lock() {
+	exec 99>|$lock
+	flock 99
+}
+export -f lock
+
+unlock() {
+	exec 99>&-
+}
+export -f unlock
 
 rund() {
 	local dir=$1
@@ -118,17 +133,9 @@ rund() {
 	if [ -d "$dir.d" ]; then
 		for i in $(ls -1d ${dir}.d/* 2>|/dev/null | sort); do
 			if [ -d "$i" ]; then
-				if [ ! -f "$i/ignore_folder" ]; then
-					ls -1 $i/*.sql 2>|/dev/null | sort | parallel --line-buffer --halt soon,fail=1 --jobs=-1 sql
-				else
-					echo "$P: Ordner <${i##/}> wird nicht verarbeitet."
-				fi
+				ls -1 $i/*.sql 2>|/dev/null | sort | parallel --line-buffer --halt soon,fail=1 --jobs=$JOBS sql
 			elif [[ -f "$i" && -r "$i" && "$i" =~ \.sql$ ]]; then
-				if [ ! -f "${i%*.*}.ignore" ]; then
-					sql $i
-				else
-					echo "$P: Datei <${i##*/}> wird nicht verarbeitet."
-				fi
+				sql $i
 			else
 				continue
 			fi
@@ -206,13 +213,19 @@ import() {
 
 	s=$(stat -c %s "$dst")
 
-	echo "IMPORT (Slot:$slc/$slc_max) $(bdate): $dst $(memunits $s)"
+	echo "IMPORT $(bdate): $dst $(memunits $s)"
 
 	if [ -n "$sfre" ] && eval [[ "$src" =~ "$sfre" ]]; then
-		echo "WARNING: Importfehler werden ignoriert"
+		echo "WARNUNG: Importfehler werden ignoriert"
 		opt="$opt -skipfailures"
 	fi
 	opt="$opt -ds_transaction --config PG_USE_COPY $USECOPY -nlt CONVERT_TO_LINEAR"
+
+	if [ $AVOIDDUPES = "true" ]; then
+		if useonconflict; then
+			opt="$opt --config OGR_PG_SKIP_CONFLICTS YES"
+		fi
+	fi
 
 	case "$MACHTYPE" in
 	*-cygwin|*msys)
@@ -223,13 +236,22 @@ import() {
 		;;
 	esac
 
-	local pgf="$(dirname "$dst1")/progress/$(basename "$dst1")"
-	echo "RUNNING: ogr2ogr -f $DRIVER $opt $sf_opt -update -append -progress \"$DST\" $CRS \"$dst1\"" | sed -Ee 's/password=\S+/password=*removed*/'
-	ogr2ogr -f $DRIVER $opt $sf_opt -update -append -progress "$DST" $CRS "$dst1" > "$pgf"
+	if ffdate=$(python3 $B/ffdate.py "$dst1"); then
+		ffdate=${ffdate//[	 ]}
+		opt="$opt -doo \"PRELUDE_STATEMENTS=CREATE TEMPORARY TABLE deletedate AS SELECT '$ffdate'::character(20) AS endet\""
+	elif (( $? == 2 )); then
+		:
+	else
+		echo "Konnte Portionsdatum nicht bestimmen"
+		return 1
+	fi
+
+	echo "RUNNING: ogr2ogr -f $DRIVER $opt $sf_opt -update -append \"$DST\" $CRS \"$dst1\"" | sed -Ee 's/password=\S+/password=*removed*/'
+	eval ogr2ogr -f $DRIVER $opt $sf_opt -update -append \"$DST\" $CRS \"$dst1\"
 	local r=$?
 	t1=$(bdate +%s)
 
-	(flock 11; progress "$dst" "$dst1" $s $t0 $t1 $r) 11<"$lock"
+	progress "$src" "$dst1" $s $t0 $t1 $r
 
 	[ $rm == 1 ] && rm -fv "$dst"
 	trap "" EXIT
@@ -260,22 +282,24 @@ process() {
 				n=$(psql -X -t -c "SELECT count(*) FROM pg_catalog.pg_sequences WHERE schemaname='${SCHEMA//\'/\'\'}' AND sequencename='alkis_quittierungen_seq'" "$DB")
 				n=${n//[	 ]}
 				if [ $n -eq 0 ]; then
-					runsql "CREATE SEQUENCE $SCHEMA.alkis_quittierungen_seq"
+					runsql "CREATE SEQUENCE \"${SCHEMA//\"/\"\"}\".alkis_quittierungen_seq"
 				fi
 
-				quittierungsnr=$(psql -A -X -t -c "SELECT nextval('$SCHEMA.alkis_quittierungen_seq')" "$DB")
+				quittierungsnr=$(psql -A -X -t -c "SELECT nextval('\"${SCHEMA//\"/\"\"}\".alkis_quittierungen_seq')" "$DB")
 				quittierungsnr=${quittierungsnr//[	 ]}
 				export quittierungsnr
-				export quittierungsi=0
 			fi
+		fi
+
+		if [ $AVOIDDUPES = "true" ] && (( JOBS != 1 )) && ! useonconflict; then
+			echo "WARNUNG: Paralleler Import bei Fortführung/Duplikate ignorieren kann mit GDAL <3.10, PG <9.5 oder USECOPY zu Abbrüchen führen"
 		fi
 
 		export job
 		export progress
-		parallel --line-buffer --halt soon,fail=1 --jobs=$JOBS import <$job
+		parallel --tag --line-buffer --halt soon,fail=1 --jobs=$JOBS import <$job
 		r=$?
 		rm $job
-		job=
 	fi
 	return $r
 }
@@ -293,6 +317,7 @@ progress() {
 	local remaining_size
 	local errors=0
 
+	lock
 	[ -f $progress ] && . $progress
 
 	start_time=${start_time:-$t0}
@@ -309,14 +334,14 @@ progress() {
 		else
 			success=false
 		fi
-		python3 $B/quittierung.py . "$dst" "$(printf "ID_%08d" $quittierungsi)" $quittierungsnr $success
-		(( ++quittierungsi ))
+		python3 $B/quittierung.py . "$dst" $quittierungsnr $success
 	fi
-
 
 	if [ $r -ne 0 ]; then
 		(( errors++ )) || true
 		echo "ERROR: Ergebnis $r bei $file (bislang $errors Fehler)"
+	else
+		runsql "INSERT INTO \"${SCHEMA//\"/\"\"}\".alkis_importe(filename, datadate) VALUES ('${file//\'/\'\'}','$ffdate')"
 	fi
 
 	if (( elapsed > 0 )); then
@@ -333,32 +358,30 @@ progress() {
 		echo "TIME: $file mit $(memunits $size) in 0,nichts importiert."
 	fi
 
-	cat <<-EOF >|$progress
-	start_time=$start_time
-	total_size=$total_size
-	remaining_size=$remaining_size
-	last_time=$t1
-	errors=$errors
-	quittierungsnr=$quittierungsnr
-	quittierungsi=$quittierungsi
-	EOF
+	cat <<EOF >|$progress
+start_time=$start_time
+total_size=$total_size
+remaining_size=$remaining_size
+last_time=$t1
+errors=$errors
+quittierungsnr=$quittierungsnr
+EOF
+
+	unlock
 }
 export -f progress
 
 final() {
+	lock
 	start_time=0
 	last_time=0
 	! [ -f $progress ] || . $progress
 	total_elapsed=$(( last_time - start_time ))
 	if (( total_elapsed > 0 )); then
-		if [ $slc -eq $slc_max ]; then
-			final="XFINAL"
-		else
-			final="FINAL"
-		fi
-		echo "$final (Slot:$slc/$slc_max): $(memunits $total_size) in $(timeunits $start_time $last_time) ($(memunits $(( total_size / total_elapsed )))/s)"
+		echo "FINAL: $(memunits $total_size) in $(timeunits $start_time $last_time) ($(memunits $(( total_size / total_elapsed )))/s)"
 	fi
 	rm -f $progress
+	unlock
 }
 
 export LC_CTYPE=de_DE.UTF-8
@@ -389,14 +412,12 @@ echo "START $(bdate)"
 GDAL_VERSION=$(unset CPL_DEBUG; ogr2ogr --version)
 echo $GDAL_VERSION
 
-major=${GDAL_VERSION#GDAL }
-major=${major%%.*}
-minor=${GDAL_VERSION#GDAL $major.}
-minor=${minor%%.*}
-if [ $major -lt 3 ] || [ $major -eq 3 -a $minor -lt 8 ]; then
-	echo "$P: erfordert GDAL >=3.8" >&2
+IFS=". " read gdal GDAL_MAJOR GDAL_MINOR _ <<<$GDAL_VERSION
+if [ "$gdal" != "GDAL" ] || (( GDAL_MAJOR<3 || (GDAL_MAJOR==3 && GDAL_MINOR<8) )); then
+	echo "$P: erfordert GDAL >=3.8 [$gdal|$GDAL_MAJOR|$GDAL_MINOR]" >&2
 	exit 1
 fi
+export GDAL_MAJOR GDAL_MINOR
 
 # Verhindern, dass der GML-Treiber übernimmt
 export OGR_SKIP=GML
@@ -412,36 +433,17 @@ opt=
 log=
 preprocessed=0
 sfre=
-slot_token="<new-slot>"
-dumpxfile=
 
 export job=
-export tmpdir=
-export lock=
-export progress=
-export jobi=1
-export slc=1
-export slc_max=$(grep -c "$slot_token" "$F")
+export tmpdir=$(mktemp -d)
+[ -d "$tmpdir" ] && trap "rm -rf '$tmpdir'" EXIT
+export lock=$tmpdir/nas.lock
+export progress=$tmpdir/nas.progress
+export jobi=0
 
+rm -f $lock
 while read src
 do
-	case $src in
-	"temp "*)
-		TEMP=${src#temp }
-		tmpdir=$TEMP
-		if ! [ -d "$TEMP" ]
-		then
-			mkdir -p "$TEMP"
-		else
-			rm -f "$TEMP/*"
-		fi
-		lock=$tmpdir/nas.lock
-		touch "$lock"
-		progress=$tmpdir/nas.progress
-		continue
-		;;
-	esac
-
 	case "${src,,}" in
 	""|"#"*)
 		# Leerzeilen und Kommentare ignorieren
@@ -450,21 +452,13 @@ do
 
 	*.zip|*.xml.gz|*.xml)
 		if [ -z "$job" ]; then
-			echo "$P: Bestimme unkomprimierte Gesamtgröße für Slot $jobi"
+			echo "$P: Bestimme unkomprimierte Gesamtgröße"
 
 			S=0
-			slc=1
 			while read file
 			do
 				if [ "$file" = "exit" ]; then
 					break
-				elif [ "$file" = "$slot_token" ]; then
-					if [ $jobi -eq $slc ]; then
-						break
-					elif [ $jobi -gt $slc ]; then
-						(( ++slc ))
-						S=0
-					fi
 				elif ! [ -f "$file" -a -r "$file" ]; then
 					continue
 				fi
@@ -503,16 +497,16 @@ do
 				(( S += s )) || true
 			done <"$F"
 
-			cat <<-EOF >|$progress
-			total_size=$S
-			remaining_size=$S
-			EOF
+			cat <<EOF >|$progress
+total_size=$S
+remaining_size=$S
+EOF
 
 			if (( S > 0 )); then
 				echo "$P: Unkomprimierte Gesamtgröße: $(memunits $S)"
 			fi
 
-			export job=$tmpdir/$(( jobi++ )).lst
+			export job=$tmpdir/$(( ++jobi )).lst
 		fi
 
 		echo $src >>$job
@@ -520,34 +514,63 @@ do
 		;;
 	esac
 
+	process
+
 	case $src in
-	$slot_token)
-		process
-		final
-		continue
-		;;
 	PG:*)
 		DST=$src
 		DB=${src#PG:}
 		DRIVER=PostgreSQL
+
+		useonconflict() {
+			local pgname
+
+			if [ -z "$PG_MAJOR" ]; then
+				IFS=". " read pgname PG_MAJOR PG_MINOR _ < <(psql -X -A -t -c "SELECT version()" "$DB")
+				if [ "$pgname" != "PostgreSQL" ]; then
+					echo "$P: Konnte PostgreSQL-Version nicht feststellen" >&2
+					exit 1
+				elif (( PG_MAJOR < 8 || (PG_MAJOR==8 && PG_MINOR<4) )); then
+					echo "$P: Mindestens PostgreSQL 8.4 erforderlich" >&2
+					exit 1
+				fi
+				echo "PostgreSQL-Version: $PG_MAJOR.$PG_MINOR"
+			fi
+
+			if [ $AVOIDDUPES = true -a $USECOPY = NO ] &&
+				(( GDAL_MAJOR>3 || (GDAL_MAJOR==3 && GDAL_MINOR>=10) )) &&
+				(( PG_MAJOR>9 || (PG_MAJOR==9 && PG_MAJOR>=5) )); then
+				return 0
+			else
+				return 1
+			fi
+		}
+		export -f useonconflict
 		sql() {
 			local file=$1
 			pushd "$B" >|/dev/null
 			local t0=$(bdate +%s)
 			echo "SQL RUN: $file $(bdate)"
+
+			local avoiddupes=$AVOIDDUPES
+			if useonconflict; then
+				avoiddupes=false
+			fi
+
+			PGAPPNAME=$file \
 			psql -X -P pager=off \
 				-v alkis_pgverdraengen=$PGVERDRAENGEN \
 				-v alkis_fnbruch=$FNBRUCH \
-				-v alkis_avoiddupes=$AVOIDDUPES \
+				-v alkis_avoiddupes=$avoiddupes \
 				-v alkis_hist=$HISTORIE \
 				-v alkis_epsg=$EPSG \
-				-v alkis_schema=$SCHEMA \
-				-v postgis_schema=$PGSCHEMA \
-				-v parent_schema=${PARENTSCHEMA:-$SCHEMA} \
+				-v alkis_transform=$TRANSFORM \
+				-v alkis_schema="$SCHEMA" \
+				-v postgis_schema="$PGSCHEMA" \
+				-v parent_schema="${PARENTSCHEMA:-$SCHEMA}" \
 				-v ON_ERROR_STOP=1 \
 				-v ECHO=errors \
 				--quiet \
-				-c "SET application_name='$file'" \
 				-f "$file" \
 				"$DB"
 			local r=$?
@@ -558,12 +581,18 @@ do
 		}
 		export -f sql
 		runsql() {
+			local avoiddupes=$AVOIDDUPES
+			if useonconflict; then
+				avoiddupes=false
+			fi
+
 			psql -X -P pager=off \
 				-v alkis_pgverdraengen=$PGVERDRAENGEN \
 				-v alkis_fnbruch=$FNBRUCH \
-				-v alkis_avoiddupes=$AVOIDDUPES \
+				-v alkis_avoiddupes=$avoiddupes \
 				-v alkis_hist=$HISTORIE \
 				-v alkis_epsg=$EPSG \
+				-v alkis_transform=$TRANSFORM \
 				-v alkis_schema=$SCHEMA \
 				-v postgis_schema=$PGSCHEMA \
 				-v parent_schema=${PARENTSCHEMA:-$SCHEMA} \
@@ -587,6 +616,7 @@ do
 		log() {
 			export SCHEMAL="'${SCHEMA//\'/\'\'}'"
 			export SCHEMAI="\"${SCHEMA//\"/\"\"}\""
+
 			n=$(psql -X -t -c "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname=$SCHEMAL" "$DB")
 			n=${n//[	 ]}
 			if [ $n -eq 0 ]; then
@@ -596,7 +626,7 @@ do
 			n=$(psql -X -t -c "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname=$SCHEMAL" "$DB")
 			n=${n//[	 ]}
 			if [ $n -eq 0 ]; then
-				echo "Schema $SCHEMA nicht erzeugt" >&2
+				echo "$P: Schema $SCHEMA nicht erzeugt" >&2
 				exit 1
 			fi
 
@@ -605,6 +635,8 @@ do
 			if [ $n -eq 0 ]; then
 				psql -X -q -c "CREATE TABLE $SCHEMAI.alkis_importlog(n SERIAL PRIMARY KEY, ts timestamp default now(), msg text)" "$DB"
 			fi
+
+			unlock
 
 			local log=$1
 			export log
@@ -625,7 +657,7 @@ do
 
 	"pgschema "*)
 		PGSCHEMA=${src#pgschema }
-		if [ $major -lt 3 ] || [ $major -eq 3 -a $minor -lt 1 ]; then
+		if (( GDAL_MAJOR<3 || (GDAL_MAJOR==3 && GDAL_MINOR<1) )); then
 			DST="${DST/ active_schema=*/} active_schema=$SCHEMA','$PGSCHEMA"
 		else
 			DST="${DST/ active_schema=*/} active_schema=$SCHEMA schemas=$SCHEMA,$PGSCHEMA"
@@ -635,7 +667,7 @@ do
 
 	"schema "*)
 		SCHEMA=${src#schema }
-		if [ $major -lt 3 ] || [ $major -eq 3 -a $minor -lt 1 ]; then
+		if (( GDAL_MAJOR<3 || (GDAL_MAJOR==3 && GDAL_MINOR<1) )); then
 			DST="${DST/ active_schema=*/} active_schema=$SCHEMA','$PGSCHEMA"
 		else
 			DST="${DST/ active_schema=*/} active_schema=$SCHEMA schemas=$SCHEMA,$PGSCHEMA"
@@ -646,14 +678,14 @@ do
 	"quittierung "*)
 		QUITTIERUNG=${src#quittierung }
 		case "$QUITTIERUNG" in
-		an|on|true|an)
+		an|on|true|yes)
 			QUITTIERUNG=true
 			;;
-		aus|off|false)
+		aus|off|false|no)
 			QUITTIERUNG=false
 			;;
 		*)
-			echo "$P: Ungültiger Wert $QUITTIERUNG (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $QUITTIERUNG (true oder false erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -664,14 +696,14 @@ do
 	"historie "*)
 		HISTORIE=${src#historie }
 		case "${HISTORIE,,}" in
-		an|on|true|an)
+		an|on|true|yes)
 			HISTORIE=true
 			;;
-		aus|off|false)
+		aus|off|false|no)
 			HISTORIE=false
 			;;
 		*)
-			echo "$P: Ungültiger Wert $HISTORIE (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $HISTORIE (true oder false erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -682,14 +714,14 @@ do
 	"avoiddupes "*)
 		AVOIDDUPES=${src#avoiddupes }
 		case "${AVOIDDUPES,,}" in
-		an|on|true|an)
+		an|on|true|yes)
 			AVOIDDUPES=true
 			;;
-		aus|off|false)
+		aus|off|false|no)
 			AVOIDDUPES=false
 			;;
 		*)
-			echo "$P: Ungültiger Wert $AVOIDDUPES (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $AVOIDDUPES (true oder false erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -700,14 +732,14 @@ do
 	"usecopy "*)
 		USECOPY=${src#usecopy }
 		case "${USECOPY,,}" in
-		an|on|true|an)
-			USECOPY=ON
+		an|on|true|yes)
+			USECOPY=YES
 			;;
-		aus|off|false)
-			USECOPY=OFF
+		aus|off|false|no)
+			USECOPY=NO
 			;;
 		*)
-			echo "$P: Ungültiger Wert $USECOPY (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $USECOPY (yes oder no erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -718,14 +750,14 @@ do
 	"fnbruch "*)
 		FNBRUCH=${src#fnbruch }
 		case "${FNBRUCH,,}" in
-		an|on|true|an)
+		an|on|true|yes)
 			FNBRUCH=true
 			;;
-		aus|off|false)
+		aus|off|false|no)
 			FNBRUCH=false
 			;;
 		*)
-			echo "$P: Ungültiger Wert $FNBRUCH (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $FNBRUCH (true oder false erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -736,14 +768,14 @@ do
 	"pgverdraengen "*)
 		PGVERDRAENGEN=${src#pgverdraengen }
 		case "${PGVERDRAENGEN,,}" in
-		an|on|true|an)
+		an|on|true|yes)
 			PGVERDRAENGEN=true
 			;;
-		aus|off|false)
+		aus|off|false|no)
 			PGVERDRAENGEN=false
 			;;
 		*)
-			echo "$P: Ungültiger Wert $PGVERDRAENGEN (true oder false erwartet)"
+			echo "$P: Ungültiger Wert $PGVERDRAENGEN (true oder false erwartet)" >&2
 			exit 1
 			;;
 		esac
@@ -751,10 +783,29 @@ do
 		continue
 		;;
 
+	"transform "*)
+		TRANSFORM=${src#transform }
+		case "${TRANSFORM,,}" in
+		an|on|true|yes)
+			TRANSFORM=true
+			;;
+		aus|off|false|no)
+			TRANSFORM=false
+			;;
+		*)
+			echo "$P: Ungültiger Wert $TRANSFORM (true oder false erwartet)" >&2
+			exit 1
+			;;
+		esac
+
+		continue
+		;;
+
+
 	"epsg "*)
 		EPSG=${src#epsg }
 
-		if [ $major -ge 3 ]; then
+		if (( GDAL_MAJOR >= 3 )); then
 			case "$EPSG" in
 			13146[678]|3068)
 				export CRS="-a_srs $B/$EPSG.prj"
@@ -766,6 +817,7 @@ do
 				export CRS="-s_srs $B/1$EPSG.prj -t_srs EPSG:$EPSG"
 				;;
 			*)
+				export CRS="-a_srs EPSG:$EPSG"
 				;;
 			esac
 
@@ -781,6 +833,8 @@ do
 				export PROJ_LIB=$B CRS="-s_srs +init=custom:1$EPSG -t_srs EPSG:$EPSG"
 				;;
 			*)
+				export CRS="-a_srs EPSG:$EPSG"
+
 				;;
 			esac
 
@@ -870,6 +924,18 @@ do
 		continue
 		;;
 
+	"temp "*)
+		TEMP=${src#temp }
+		tmpdir=$TEMP
+		if ! [ -d "$TEMP" ]
+		then
+			mkdir -p "$TEMP"
+		else
+			rm -f $TEMP/*
+		fi
+		continue
+		;;
+
 	"debug "*)
 		export CPL_DEBUG=${src#debug }
 		if [ -z "$CPL_DEBUG" ]; then
@@ -888,9 +954,6 @@ do
 	options|"options"*)
 		opt=${src#options}
 		opt=${opt# }
-		if [ "$DRIVER" = OCI ]; then
-			opt="$opt -relaxedFieldNameMatch"
-		fi
 		continue
 		;;
 
@@ -917,28 +980,31 @@ do
 		else
 			src=${src#log }
 		fi
+
 		log=$(bdate +$src)
 
 		echo "LOGGING TO $log $(bdate)"
+		lock
 		exec 3>&1 4>&2 > >(log $log) 2>&1
-		
+		lock
+		unlock
+
 		echo "LOG $(bdate)"
 		if ! [ -e "$B/.git" ]; then
 			echo 'Import-Version: $Format:%h$'
 		else
 			if type -p git >/dev/null; then
-				git -C "$B" log -1 --pretty='Import-Version: %ad'
+				git log -1 --pretty='Import-Version: %h'
 			else
 				echo 'Import-Version: unbekannt'
 			fi
 		fi
 		echo "GDAL-Version: $GDAL_VERSION"
-		echo "CPU-Kerne: $(nproc)"
 
 		continue
 		;;
 
-	dump|"dump "*|"dumpx "*)
+	dump|"dump "*)
 		if [ -z "$DB" ]; then
 			echo "$P: Keine Datenbankverbindungsdaten angegeben" >&2
 			exit 1
@@ -946,21 +1012,14 @@ do
 
 		if [ "$src" = "dump" ]; then
 			src="alkis-%Y-%m-%d-%H-%M"
-		elif [[ "$src" = "dumpx "* ]]; then
-			src=${src#dumpx }
-			dumpxfile=$src
 		else
 			src=${src#dump }
 		fi
 
 		src=$(bdate +$src)
 
-		if [ -z "$dumpxfile" ]; then
-			echo "DUMPING $(bdate)"
-			dump "$src"
-		else
-			dumpxfile=$src
-		fi
+		echo "DUMPING $(bdate)"
+		dump "$src"
 
 		continue
 		;;
@@ -985,6 +1044,10 @@ do
 	esac
 done <"$F"
 
+process
+
+final
+
 if [ "$src" = "error" ]; then
 	echo "FEHLER BEIM IMPORT"
 elif [ "$src" != "exit" ]; then
@@ -1003,9 +1066,6 @@ elif [ "$src" != "exit" ]; then
 		if ! rund postprocessing; then
 			echo "FEHLER BEIM POSTPROCESSING"
 			src=error
-		elif [ ! -z "$dumpxfile" ]; then
-			echo "DUMPING $(bdate)"
-			dump "$dumpxfile"
 		fi
 	fi
 
