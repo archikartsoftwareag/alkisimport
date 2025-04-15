@@ -30,41 +30,44 @@ CREATE TABLE ak_fs_fuellfl_umfang_nutz(
 COMMENT ON TABLE ak_fs_fuellfl_umfang_nutz IS 'ARCHIKART: Füllflächenumfang Flurstücke - K0003AXAbschnitt';
 CREATE INDEX ak_fs_fuellfl_umfang_nutz_idx1 ON ak_fs_fuellfl_umfang_nutz(fs_gml_id);
 
-DROP TABLE IF EXISTS alkis_options;
-CREATE TABLE alkis_options (
+SELECT alkis_dropobject('alkis_options');
+SELECT alkis_dropobject('ak_alkis_options');
+CREATE TABLE ak_alkis_options (
 	id serial NOT NULL,
 	name varchar NOT NULL,
 	value varchar NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_alkis_options_name 
-ON alkis_options (name);
+CREATE INDEX idx_ak_alkis_options_name 
+ON ak_alkis_options (name);
 
-DROP TABLE IF EXISTS alkis_komplettupdate;
-CREATE TABLE alkis_komplettupdate (
+SELECT alkis_dropobject('alkis_komplettupdate');
+SELECT alkis_dropobject('ak_alkis_komplettupdate');
+CREATE TABLE ak_alkis_komplettupdate (
 	id serial NOT NULL,
 	typename varchar NOT NULL,
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_alkis_komplettupdate_typename 
-ON alkis_komplettupdate (typename);
-CREATE INDEX idx_alkis_komplettupdate_featureid 
-ON alkis_komplettupdate (featureid);
+CREATE INDEX idx_ak_alkis_komplettupdate_typename 
+ON ak_alkis_komplettupdate (typename);
+CREATE INDEX idx_ak_alkis_komplettupdate_featureid 
+ON ak_alkis_komplettupdate (featureid);
 
-DROP TABLE IF EXISTS alkis_insert;
-CREATE TABLE alkis_insert (
+SELECT alkis_dropobject('alkis_insert');
+SELECT alkis_dropobject('ak_alkis_insert');
+CREATE TABLE ak_alkis_insert (
 	id serial NOT NULL,
 	typename varchar NOT NULL,
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_alkis_insert_typename 
-ON alkis_insert (typename);
-CREATE INDEX idx_alkis_insert_featureid 
-ON alkis_insert (featureid);
+CREATE INDEX idx_ak_alkis_insert_typename 
+ON ak_alkis_insert (typename);
+CREATE INDEX idx_ak_alkis_insert_featureid 
+ON ak_alkis_insert (featureid);
 
-DROP TABLE IF EXISTS ak_object_not_found;
+SELECT alkis_dropobject('ak_object_not_found');
 CREATE TABLE ak_object_not_found (
 	id serial NOT NULL,
 	typename varchar NOT NULL,
@@ -73,7 +76,8 @@ CREATE TABLE ak_object_not_found (
 	PRIMARY KEY (id)
 );
 
-CREATE OR REPLACE function alkis_fs_fuellfl_geom(fs_id varchar, join_table varchar) RETURNS geometry
+SELECT alkis_dropobject('alkis_fs_fuellfl_geom');
+CREATE OR REPLACE function ak_alkis_fs_fuellfl_geom(fs_id varchar, join_table varchar) RETURNS geometry
 LANGUAGE plpgsql
 STABLE
 AS $$
@@ -90,7 +94,8 @@ BEGIN
 END;
 $$ SET search_path TO archikart, public;
 
-CREATE OR REPLACE function alkis_fs_ab_geom(fs_id varchar, ab_id varchar, join_table varchar) RETURNS geometry
+SELECT alkis_dropobject('alkis_fs_ab_geom');
+CREATE OR REPLACE function ak_alkis_fs_ab_geom(fs_id varchar, ab_id varchar, join_table varchar) RETURNS geometry
 LANGUAGE plpgsql
 STABLE
 AS $$
@@ -110,7 +115,8 @@ BEGIN
 END;
 $$ SET search_path TO archikart, public;
 
-CREATE OR REPLACE function alkis_buffer_test(geom geometry, buffer_offset float) RETURNS boolean
+SELECT alkis_dropobject('alkis_buffer_test');
+CREATE OR REPLACE function ak_alkis_buffer_test(geom geometry, buffer_offset float) RETURNS boolean
 LANGUAGE plpgsql
 STABLE
 AS $$
@@ -124,14 +130,15 @@ BEGIN
 END;
 $$ SET search_path TO archikart, public;
 
-CREATE OR REPLACE function alkis_fs_fuellfl_buffer_test(fs_id varchar, join_table varchar, buffer_offset float) RETURNS boolean
+SELECT alkis_dropobject('alkis_fs_fuellfl_buffer_test');
+CREATE OR REPLACE function ak_alkis_fs_fuellfl_buffer_test(fs_id varchar, join_table varchar, buffer_offset float) RETURNS boolean
 LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
   is_empty boolean;
 BEGIN
-  EXECUTE format('SELECT alkis_buffer_test(alkis_fs_fuellfl_geom(%L,%L),%s)',
+  EXECUTE format('SELECT ak_alkis_buffer_test(ak_alkis_fs_fuellfl_geom(%L,%L),%s)',
                  fs_id,join_table,buffer_offset)
   INTO is_empty;
   
@@ -139,14 +146,15 @@ BEGIN
 END;
 $$ SET search_path TO archikart, public;
 
-CREATE OR REPLACE function alkis_fs_ab_buffer_test(fs_id varchar, ab_id varchar, join_table varchar, buffer_offset float) RETURNS boolean
+SELECT alkis_dropobject('alkis_fs_ab_buffer_test');
+CREATE OR REPLACE function ak_alkis_fs_ab_buffer_test(fs_id varchar, ab_id varchar, join_table varchar, buffer_offset float) RETURNS boolean
 LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
   is_empty boolean;
 BEGIN
-  EXECUTE format('SELECT alkis_buffer_test(alkis_fs_ab_geom(%L,%L,%L),%s)',
+  EXECUTE format('SELECT ak_alkis_buffer_test(ak_alkis_fs_ab_geom(%L,%L,%L),%s)',
                  fs_id,ab_id,join_table,buffer_offset)
   INTO is_empty;
   

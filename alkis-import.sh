@@ -133,9 +133,17 @@ rund() {
 	if [ -d "$dir.d" ]; then
 		for i in $(ls -1d ${dir}.d/* 2>|/dev/null | sort); do
 			if [ -d "$i" ]; then
-				ls -1 $i/*.sql 2>|/dev/null | sort | parallel --line-buffer --halt soon,fail=1 --jobs=$JOBS sql
-			elif [[ -f "$i" && -r "$i" && "$i" =~ \.sql$ ]]; then
-				sql $i
+				if [ ! -f "$i/ignore_folder" ]; then # Archikart
+					ls -1 $i/*.sql 2>|/dev/null | sort | parallel --line-buffer --halt soon,fail=1 --jobs=-1 sql # Archikart
+				else # Archikart
+					echo "$P: Ordner <${i##/}> wird nicht verarbeitet." # Archikart
+				fi # Archikart
+			elif [[ -f "$i" && -r "$i" && "$i" =~ \.sql$ ]]; then # Archikart
+				if [ ! -f "${i%*.*}.ignore" ]; then # Archikart
+					sql $i # Archikart
+				else # Archikart
+					echo "$P: Datei <${i##*/}> wird nicht verarbeitet." # Archikart
+				fi # Archikart
 			else
 				continue
 			fi
@@ -213,7 +221,7 @@ import() {
 
 	s=$(stat -c %s "$dst")
 
-	echo "IMPORT $(bdate): $dst $(memunits $s)"
+	echo "IMPORT (Slot:$slc/$slc_max) $(bdate): $dst $(memunits $s)" # Archikart
 
 	if [ -n "$sfre" ] && eval [[ "$src" =~ "$sfre" ]]; then
 		echo "WARNUNG: Importfehler werden ignoriert"
@@ -236,22 +244,23 @@ import() {
 		;;
 	esac
 
-	if ffdate=$(python3 $B/ffdate.py "$dst1"); then
-		ffdate=${ffdate//[	 ]}
-		opt="$opt -doo \"PRELUDE_STATEMENTS=CREATE TEMPORARY TABLE deletedate AS SELECT '$ffdate'::character(20) AS endet\""
-	elif (( $? == 2 )); then
-		:
-	else
-		echo "Konnte Portionsdatum nicht bestimmen"
-		return 1
-	fi
+# Archikart	if ffdate=$(python3 $B/ffdate.py "$dst1"); then
+# Archikart		ffdate=${ffdate//[	 ]}
+# Archikart		opt="$opt -doo \"PRELUDE_STATEMENTS=CREATE TEMPORARY TABLE deletedate AS SELECT '$ffdate'::character(20) AS endet\""
+# Archikart	elif (( $? == 2 )); then
+# Archikart		:
+# Archikart	else
+# Archikart		echo "Konnte Portionsdatum nicht bestimmen"
+# Archikart		return 1
+# Archikart	fi
 
-	echo "RUNNING: ogr2ogr -f $DRIVER $opt $sf_opt -update -append \"$DST\" $CRS \"$dst1\"" | sed -Ee 's/password=\S+/password=*removed*/'
-	eval ogr2ogr -f $DRIVER $opt $sf_opt -update -append \"$DST\" $CRS \"$dst1\"
+	local pgf="$(dirname "$dst1")/progress/$(basename "$dst1")" # Archikart
+	echo "RUNNING: ogr2ogr -f $DRIVER $opt $sf_opt -update -append -progress \"$DST\" $CRS \"$dst1\"" | sed -Ee 's/password=\S+/password=*removed*/'
+	ogr2ogr -f $DRIVER $opt $sf_opt -update -append -progress "$DST" $CRS "$dst1" > "$pgf" # Archikart
 	local r=$?
 	t1=$(bdate +%s)
 
-	progress "$src" "$dst1" $s $t0 $t1 $r
+	progress "$dst" "$dst1" $s $t0 $t1 $r # Archikart
 
 	[ $rm == 1 ] && rm -fv "$dst"
 	trap "" EXIT
@@ -297,9 +306,10 @@ process() {
 
 		export job
 		export progress
-		parallel --tag --line-buffer --halt soon,fail=1 --jobs=$JOBS import <$job
+		parallel --line-buffer --halt soon,fail=1 --jobs=$JOBS import <$job # Archikart
 		r=$?
 		rm $job
+		job= # Archikart
 	fi
 	return $r
 }
@@ -340,8 +350,8 @@ progress() {
 	if [ $r -ne 0 ]; then
 		(( errors++ )) || true
 		echo "ERROR: Ergebnis $r bei $file (bislang $errors Fehler)"
-	else
-		runsql "INSERT INTO \"${SCHEMA//\"/\"\"}\".alkis_importe(filename, datadate) VALUES ('${file//\'/\'\'}','$ffdate')"
+# Archikart	else
+# Archikart		runsql "INSERT INTO \"${SCHEMA//\"/\"\"}\".alkis_importe(filename, datadate) VALUES ('${file//\'/\'\'}','$ffdate')"
 	fi
 
 	if (( elapsed > 0 )); then
@@ -358,14 +368,14 @@ progress() {
 		echo "TIME: $file mit $(memunits $size) in 0,nichts importiert."
 	fi
 
-	cat <<EOF >|$progress
-start_time=$start_time
-total_size=$total_size
-remaining_size=$remaining_size
-last_time=$t1
-errors=$errors
-quittierungsnr=$quittierungsnr
-EOF
+	cat <<-EOF >|$progress # Archikart
+	start_time=$start_time # Archikart
+	total_size=$total_size # Archikart
+	remaining_size=$remaining_size # Archikart
+	last_time=$t1 # Archikart
+	errors=$errors # Archikart
+	quittierungsnr=$quittierungsnr # Archikart
+	EOF # Archikart
 
 	unlock
 }
@@ -378,7 +388,12 @@ final() {
 	! [ -f $progress ] || . $progress
 	total_elapsed=$(( last_time - start_time ))
 	if (( total_elapsed > 0 )); then
-		echo "FINAL: $(memunits $total_size) in $(timeunits $start_time $last_time) ($(memunits $(( total_size / total_elapsed )))/s)"
+		if [ $slc -eq $slc_max ]; then # Archikart
+			final="XFINAL" # Archikart
+		else # Archikart
+			final="FINAL" # Archikart
+		fi # Archikart
+		echo "$final (Slot:$slc/$slc_max): $(memunits $total_size) in $(timeunits $start_time $last_time) ($(memunits $(( total_size / total_elapsed )))/s)" # Archikart
 	fi
 	rm -f $progress
 	unlock
@@ -433,17 +448,41 @@ opt=
 log=
 preprocessed=0
 sfre=
+slot_token="<new-slot>" # Archikart
+dumpxfile= # Archikart
 
 export job=
-export tmpdir=$(mktemp -d)
-[ -d "$tmpdir" ] && trap "rm -rf '$tmpdir'" EXIT
-export lock=$tmpdir/nas.lock
-export progress=$tmpdir/nas.progress
-export jobi=0
+# Archikart export tmpdir=$(mktemp -d)
+# Archikart [ -d "$tmpdir" ] && trap "rm -rf '$tmpdir'" EXIT
+# Archikart export lock=$tmpdir/nas.lock
+# Archikart export progress=$tmpdir/nas.progress
+# Archikart export jobi=0
+export tmpdir= # Archikart
+export lock= # Archikart
+export progress= # Archikart
+export jobi=1 # Archikart
+export slc=1 # Archikart
+export slc_max=$(grep -c "$slot_token" "$F") # Archikart
 
-rm -f $lock
+# Archikart rm -f $lock
 while read src
 do
+	case $src in # Archikart
+	"temp "*) # Archikart
+		TEMP=${src#temp } # Archikart
+		tmpdir=$TEMP # Archikart
+		if ! [ -d "$TEMP" ]; then # Archikart
+			mkdir -p "$TEMP" # Archikart
+		else # Archikart
+			rm -f "$TEMP/*" # Archikart
+		fi # Archikart
+		lock=$tmpdir/nas.lock # Archikart
+		touch "$lock" # Archikart
+		progress=$tmpdir/nas.progress # Archikart
+		continue # Archikart
+		;; # Archikart
+	esac # Archikart
+
 	case "${src,,}" in
 	""|"#"*)
 		# Leerzeilen und Kommentare ignorieren
@@ -452,13 +491,21 @@ do
 
 	*.zip|*.xml.gz|*.xml)
 		if [ -z "$job" ]; then
-			echo "$P: Bestimme unkomprimierte Gesamtgröße"
+			echo "$P: Bestimme unkomprimierte Gesamtgröße für Slot $jobi" # Archikart
 
 			S=0
+			slc=1 # Archikart
 			while read file
 			do
 				if [ "$file" = "exit" ]; then
 					break
+				elif [ "$file" = "$slot_token" ]; then # Archikart
+					if [ $jobi -eq $slc ]; then # Archikart
+						break # Archikart
+					elif [ $jobi -gt $slc ]; then # Archikart
+						(( ++slc )) # Archikart
+						S=0 # Archikart
+					fi # Archikart
 				elif ! [ -f "$file" -a -r "$file" ]; then
 					continue
 				fi
@@ -497,16 +544,16 @@ do
 				(( S += s )) || true
 			done <"$F"
 
-			cat <<EOF >|$progress
-total_size=$S
-remaining_size=$S
-EOF
+			cat <<-EOF >|$progress # Archikart
+			total_size=$S # Archikart
+			remaining_size=$S # Archikart
+			EOF # Archikart
 
 			if (( S > 0 )); then
 				echo "$P: Unkomprimierte Gesamtgröße: $(memunits $S)"
 			fi
 
-			export job=$tmpdir/$(( ++jobi )).lst
+			export job=$tmpdir/$(( jobi++ )).lst # Archikart
 		fi
 
 		echo $src >>$job
@@ -514,9 +561,14 @@ EOF
 		;;
 	esac
 
-	process
+# Archikart	process
 
 	case $src in
+	$slot_token) # Archikart
+		process # Archikart
+		final # Archikart
+		continue # Archikart
+		;; # Archikart
 	PG:*)
 		DST=$src
 		DB=${src#PG:}
@@ -542,7 +594,7 @@ EOF
 				(( PG_MAJOR>9 || (PG_MAJOR==9 && PG_MAJOR>=5) )); then
 				return 0
 			else
-				return 1
+				return 0 # Archikart
 			fi
 		}
 		export -f useonconflict
@@ -994,17 +1046,18 @@ EOF
 			echo 'Import-Version: $Format:%h$'
 		else
 			if type -p git >/dev/null; then
-				git log -1 --pretty='Import-Version: %h'
+				git -C "$B" log -1 --pretty='Import-Version: %ad' # Archikart
 			else
 				echo 'Import-Version: unbekannt'
 			fi
 		fi
 		echo "GDAL-Version: $GDAL_VERSION"
+		echo "CPU-Kerne: $(nproc)" # Archikart
 
 		continue
 		;;
 
-	dump|"dump "*)
+	dump|"dump "*|"dumpx "*) # Archikart
 		if [ -z "$DB" ]; then
 			echo "$P: Keine Datenbankverbindungsdaten angegeben" >&2
 			exit 1
@@ -1012,14 +1065,21 @@ EOF
 
 		if [ "$src" = "dump" ]; then
 			src="alkis-%Y-%m-%d-%H-%M"
+		elif [[ "$src" = "dumpx "* ]]; then # Archikart
+			src=${src#dumpx } # Archikart
+			dumpxfile=$src # Archikart
 		else
 			src=${src#dump }
 		fi
 
 		src=$(bdate +$src)
 
-		echo "DUMPING $(bdate)"
-		dump "$src"
+		if [ -z "$dumpxfile" ]; then # Archikart
+			echo "DUMPING $(bdate)" # Archikart
+			dump "$src" # Archikart
+		else # Archikart
+			dumpxfile=$src # Archikart
+		fi # Archikart
 
 		continue
 		;;
@@ -1044,9 +1104,9 @@ EOF
 	esac
 done <"$F"
 
-process
+# Archikart process
 
-final
+# Archikart final
 
 if [ "$src" = "error" ]; then
 	echo "FEHLER BEIM IMPORT"
@@ -1066,6 +1126,9 @@ elif [ "$src" != "exit" ]; then
 		if ! rund postprocessing; then
 			echo "FEHLER BEIM POSTPROCESSING"
 			src=error
+		elif [ ! -z "$dumpxfile" ]; then # Archikart
+			echo "DUMPING $(bdate)" # Archikart
+			dump "$dumpxfile" # Archikart
 		fi
 	fi
 
