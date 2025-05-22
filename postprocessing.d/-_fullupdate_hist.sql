@@ -23,7 +23,7 @@ DECLARE
 BEGIN
   FOR options IN
     SELECT *
-    FROM alkis_options
+    FROM ak_alkis_options
     WHERE lower(name) IN ('komplettupdate', 'lastimportdate')
   LOOP
     CASE lower(options.name)
@@ -83,15 +83,15 @@ BEGIN
       sql_count := format(sql_base,
                           'COUNT(*)',
                           table_schema,table_name,
-                          table_schema,'alkis_komplettupdate',
-                          table_schema,'alkis_insert',
+                          table_schema,'ak_alkis_komplettupdate',
+                          table_schema,'ak_alkis_insert',
                           table_schema,'delete',
                           impdate);
       sql_hist := format(sql_base,
                          'a.gml_id, a.beginnt',
                          table_schema,table_name,
-                         table_schema,'alkis_komplettupdate',
-                         table_schema,'alkis_insert',
+                         table_schema,'ak_alkis_komplettupdate',
+                         table_schema,'ak_alkis_insert',
                          table_schema,'delete',
                          impdate);
 

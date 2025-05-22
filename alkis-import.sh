@@ -134,7 +134,13 @@ rund() {
 		for i in $(ls -1d ${dir}.d/* 2>|/dev/null | sort); do
 			if [ -d "$i" ]; then
 				if [ ! -f "$i/ignore_folder" ]; then # Archikart
-					ls -1 $i/*.sql 2>|/dev/null | sort | parallel --line-buffer --halt soon,fail=1 --jobs=-1 sql # Archikart
+					count=$(ls -1 "$i"/*.ignore 2>|/dev/null | wc -l) # Archikart
+					if [ $count = 0 ]; then # Archikart
+						files="$i/*.sql" # Archikart
+					else # Archikart
+						files="$i/*.sql $i/*.ignore" # Archikart
+					fi # Archikart
+					for f in $(ls -1 $files); do echo "${f/.ignore/.sql}"; done | sort | uniq -u | parallel --line-buffer --halt soon,fail=1 --jobs=-1 sql # Archikart
 				else # Archikart
 					echo "$P: Ordner <${i##/}> wird nicht verarbeitet." # Archikart
 				fi # Archikart
@@ -300,9 +306,9 @@ process() {
 			fi
 		fi
 
-		if [ $AVOIDDUPES = "true" ] && (( JOBS != 1 )) && ! useonconflict; then
-			echo "WARNUNG: Paralleler Import bei Fortführung/Duplikate ignorieren kann mit GDAL <3.10, PG <9.5 oder USECOPY zu Abbrüchen führen"
-		fi
+# Archikart	if [ $AVOIDDUPES = "true" ] && (( JOBS != 1 )) && ! useonconflict; then
+# Archikart		echo "WARNUNG: Paralleler Import bei Fortführung/Duplikate ignorieren kann mit GDAL <3.10, PG <9.5 oder USECOPY zu Abbrüchen führen"
+# Archikart	fi
 
 		export job
 		export progress
@@ -368,14 +374,16 @@ progress() {
 		echo "TIME: $file mit $(memunits $size) in 0,nichts importiert."
 	fi
 
-	cat <<-EOF >|$progress # Archikart
-	start_time=$start_time # Archikart
-	total_size=$total_size # Archikart
-	remaining_size=$remaining_size # Archikart
-	last_time=$t1 # Archikart
-	errors=$errors # Archikart
-	quittierungsnr=$quittierungsnr # Archikart
-	EOF # Archikart
+	# Archikart >>
+	cat <<-EOF >|$progress
+	start_time=$start_time
+	total_size=$total_size
+	remaining_size=$remaining_size
+	last_time=$t1
+	errors=$errors
+	quittierungsnr=$quittierungsnr
+	EOF
+	# Archikart <<
 
 	unlock
 }
@@ -544,10 +552,12 @@ do
 				(( S += s )) || true
 			done <"$F"
 
-			cat <<-EOF >|$progress # Archikart
-			total_size=$S # Archikart
-			remaining_size=$S # Archikart
-			EOF # Archikart
+			# Archikart >>
+			cat <<-EOF >|$progress
+			total_size=$S
+			remaining_size=$S
+			EOF
+			# Archikart <<
 
 			if (( S > 0 )); then
 				echo "$P: Unkomprimierte Gesamtgröße: $(memunits $S)"
@@ -594,7 +604,7 @@ do
 				(( PG_MAJOR>9 || (PG_MAJOR==9 && PG_MAJOR>=5) )); then
 				return 0
 			else
-				return 0 # Archikart
+				return 1
 			fi
 		}
 		export -f useonconflict

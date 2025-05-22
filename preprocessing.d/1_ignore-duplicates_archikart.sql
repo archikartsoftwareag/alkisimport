@@ -12,7 +12,7 @@ BEGIN
                   FROM %I.%I
                   WHERE lower(name) = %L
                   AND lower(value) = %L',
-                  TG_TABLE_SCHEMA,'alkis_options',
+                  TG_TABLE_SCHEMA,'ak_alkis_options',
                   'komplettupdate','true')
                   INTO i;
   
@@ -32,7 +32,7 @@ BEGIN
     IF ku THEN
       EXECUTE format('INSERT INTO %I.%I (typename, featureid)
                       VALUES (%L, %L)',
-                      TG_TABLE_SCHEMA,'alkis_komplettupdate',
+                      TG_TABLE_SCHEMA,'ak_alkis_komplettupdate',
                       TG_TABLE_NAME,NEW.gml_id);
     END IF;
     
@@ -59,7 +59,7 @@ BEGIN
     IF i = 0 THEN
       EXECUTE format('INSERT INTO %I.%I (typename, featureid)
                       VALUES (%L, %L)',
-                     TG_TABLE_SCHEMA,'alkis_insert',
+                     TG_TABLE_SCHEMA,'ak_alkis_insert',
                      TG_TABLE_NAME,NEW.gml_id);
     END IF;
     
@@ -67,3 +67,15 @@ BEGIN
   END IF;
 END;
 $$ SET search_path TO :"alkis_schema";
+
+SELECT
+	'SELECT alkis_dropobject(' || quote_literal(a.table_name || '_insert') || E');\n' ||
+	'CREATE TRIGGER ' || quote_ident(a.table_name || '_insert') || ' BEFORE INSERT ON ' || quote_ident(a.table_schema) || '.' || quote_ident(a.table_name) || ' FOR EACH ROW EXECUTE PROCEDURE ignore_duplicate();'
+FROM information_schema.columns a
+JOIN information_schema.columns b ON a.table_schema=b.table_schema AND a.table_name=b.table_name AND b.column_name='beginnt'
+WHERE a.table_schema=:'alkis_schema'
+  AND substr(a.table_name,1,3) IN ('ax_','ap_','ln_','lb_','au_','aa_')
+  AND a.column_name='gml_id';
+\gexec
+
+\endif
