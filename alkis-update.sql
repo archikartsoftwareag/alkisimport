@@ -21,7 +21,6 @@ SET search_path = :"postgis_schema", public;
 
 -- Stored Procedures laden
 \i alkis-functions.sql
-\i alkis-trigger.sql
 
 --
 -- Datenbankmigration

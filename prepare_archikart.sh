@@ -10,3 +10,5 @@ rm -f archikart.sql
 ln -s ../postcreate.d/archikart.sql ./
 rm -f nas2alb_archikart.sql
 ln -s ../postcreate.d/nas2alb_archikart.sql ./
+rm -f alkis-trigger_archikart.sql
+ln -s ../postcreate.d/alkis-trigger_archikart.sql ./

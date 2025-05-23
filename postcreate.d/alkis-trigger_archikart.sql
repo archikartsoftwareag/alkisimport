@@ -1,38 +1,4 @@
-/******************************************************************************
- *
- * Projekt:  norGIS ALKIS Import
- * Zweck:    Trigger des ALKIS-Schema
- * Author:   Jürgen E. Fischer <jef@norbit.de>
- *
- ******************************************************************************/
-
-SET client_encoding = 'UTF8';
-SET default_with_oids = false;
 SET search_path = :"alkis_schema", public;
-
---- Tabelle "delete" für Lösch- und Fortführungsdatensätze
-CREATE TABLE "delete" (
-       ogc_fid         serial NOT NULL,
-       typename        varchar,
-       featureid       varchar,
-       context         varchar,                -- delete/replace/update
-       safetoignore    varchar,                -- replace.safetoignore 'true'/'false'
-       replacedBy      varchar,                -- gmlid
-       anlass          varchar[],              -- update.anlass
-       endet           character(20),          -- update.endet
-       ignored         boolean DEFAULT false,  -- Satz wurde nicht verarbeitet
-       PRIMARY KEY (ogc_fid)
-);
-
-CREATE INDEX delete_fid ON "delete"(featureid);
-
-COMMENT ON TABLE delete IS 'BASE: Lösch- und Fortführungsdatensätze';
-COMMENT ON COLUMN delete.context      IS 'Operation ''delete'', ''replace'' oder ''update''.';
-COMMENT ON COLUMN delete.safetoignore IS 'Attribut safeToIgnore von wfsext:Replace';
-COMMENT ON COLUMN delete.replacedBy   IS 'gml_id des Objekts, das featureid ersetzt';
-COMMENT ON COLUMN delete.anlass       IS 'Anlaß des Endes';
-COMMENT ON COLUMN delete.endet        IS 'Zeitpunkt des Endes';
-COMMENT ON COLUMN delete.ignored      IS 'Löschsatz wurde ignoriert';
 
 -- Löschsatz verarbeiten (MIT Historie)
 -- context='delete'        => "endet" auf aktuelle Zeit setzen
@@ -62,14 +28,21 @@ BEGIN
 			INTO beginnt;
 
 		IF beginnt IS NULL THEN
-			RAISE EXCEPTION '%: Keinen Kandidaten zum Löschen gefunden.', NEW.featureid;
+			EXECUTE format('INSERT INTO %I.%I (typename, context, featureid)
+							VALUES (%L, %L, %L)',
+							TG_TABLE_SCHEMA,'ak_object_not_found',
+							NEW.typename, NEW.context, NEW.featureid);
+			RETURN NULL;
 		END IF;
 	ELSE
 		RAISE EXCEPTION '%: Identifikator gescheitert.', NEW.featureid;
 	END IF;
 
 	IF NEW.context='delete' THEN
-		SELECT endet INTO NEW.endet FROM pg_temp.deletedate;
+		SELECT value
+		INTO NEW.endet
+		FROM ak_alkis_options
+		WHERE lower(name) = 'importdate';
 
 	ELSIF NEW.context='update' THEN
 		IF NEW.endet IS NULL THEN
@@ -178,88 +151,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SET search_path = :"alkis_schema", public;
 
--- Abwandlung der Hist-Version als Kill-Version.
--- Die "gml_id" muss in der Datenbank das Format character(16) haben.
--- Dies kann auch Abgabeart 3100 verarbeiten. Historische Objekte werden aber sofort entfernt.
-CREATE OR REPLACE FUNCTION delete_feature_kill() RETURNS TRIGGER AS $$
-DECLARE
-	n INTEGER;
-	vbeginnt TEXT;
-	replgml TEXT;
-	featgml TEXT;
-	s TEXT;
-BEGIN
-	-- Version 2014-09-23, replace führt auch zum Löschen des Vorgängerobjektes
-	NEW.context := coalesce(lower(NEW.context),'delete');
-
-	IF NEW.anlass IS NULL THEN
-		NEW.anlass := ARRAY[]::varchar[];
-	END IF;
-	featgml := substr(NEW.featureid, 1, 16); -- gml_id ohne Timestamp
-
-	IF length(NEW.featureid)=32 THEN
-		-- beginnt-Zeit der zu löschenden Vorgänger-Version des Objektes
-		vbeginnt := substr(NEW.featureid, 17, 4) || '-'
-			 || substr(NEW.featureid, 21, 2) || '-'
-			 || substr(NEW.featureid, 23, 2) || 'T'
-			 || substr(NEW.featureid, 26, 2) || ':'
-			 || substr(NEW.featureid, 28, 2) || ':'
-			 || substr(NEW.featureid, 30, 2) || 'Z' ;
-	ELSIF length(NEW.featureid)=16 THEN
-		-- Ältestes nicht gelöschtes Objekt
-		EXECUTE 'SELECT min(beginnt) FROM ' || NEW.typename
-			|| ' WHERE gml_id=''' || featgml || '''' || ' AND endet IS NULL'
-			INTO vbeginnt;
-
-		IF vbeginnt IS NULL THEN
-			RAISE EXCEPTION '%: Keinen Kandidaten zum Löschen gefunden.', NEW.featureid;
-		END IF;
-	ELSE
-		RAISE EXCEPTION '%: Identifikator gescheitert.', NEW.featureid;
-	END IF;
-
-	IF NEW.context='replace' THEN
-		NEW.safetoignore := lower(NEW.safetoignore);
-		IF NEW.safetoignore IS NULL THEN
-			RAISE EXCEPTION '%: safeToIgnore nicht gesetzt.', NEW.featureid;
-		ELSIF NEW.safetoignore<>'true' AND NEW.safetoignore<>'false' THEN
-			RAISE EXCEPTION '%: safeToIgnore ''%'' ungültig (''true'' oder ''false'' erwartet).', NEW.featureid, NEW.safetoignore;
-		END IF;
-
-	ELSIF NEW.context NOT IN ('delete', 'update') THEN
-		RAISE EXCEPTION '%: Ungültiger Kontext % (''delete'', ''replace'' oder ''update'' erwartet).', NEW.featureid, NEW.context;
-	END IF;
-
-	-- Vorgänger-ALKIS-Objekt löschen
-	s := 'DELETE FROM ' || NEW.typename || ' WHERE gml_id=''' || featgml || ''' AND beginnt=''' || vbeginnt || '''' ;
-	EXECUTE s;
-	GET DIAGNOSTICS n = ROW_COUNT;
-	-- RAISE NOTICE 'SQL[%]:%', n, s;
-	IF n=1 THEN
-		NEW.ignored := false;
-	ELSE
-		RAISE NOTICE '%: % schlug fehl ignoriert [%]', NEW.featureid, NEW.context, n;
-		NEW.ignored := true;
-	END IF;
-
-	RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SET search_path = :"alkis_schema", public;
-
 CREATE FUNCTION pg_temp.create_trigger(hist BOOLEAN) RETURNS void AS $$
 BEGIN
 	IF hist THEN
-		CREATE TRIGGER delete_feature_trigger
+		CREATE OR REPLACE TRIGGER delete_feature_trigger
 			BEFORE INSERT ON delete
 			FOR EACH ROW
 			EXECUTE PROCEDURE delete_feature_hist();
 		RAISE NOTICE 'Historische Objekte werden geführt.';
-	ELSE
-		CREATE TRIGGER delete_feature_trigger
-			BEFORE INSERT ON delete
-			FOR EACH ROW
-			EXECUTE PROCEDURE delete_feature_kill();
-		RAISE NOTICE 'Historische Objekte werden gelöscht.';
 	END IF;
 END;
 $$ LANGUAGE plpgsql;
