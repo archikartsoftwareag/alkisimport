@@ -34,7 +34,7 @@ BEGIN
   
   ku := i > 0;
 
-  EXECUTE format('SELECT count(*) FROM %I.%I WHERE gml_id=%L AND beginnt=%L', TG_TABLE_SCHEMA, TG_TABLE_NAME, NEW.gml_id, NEW.beginnt) INTO i;
+  EXECUTE format('SELECT count(*) FROM %I.%I WHERE gml_id=%L AND beginnt=%L AND endet IS NULL', TG_TABLE_SCHEMA, TG_TABLE_NAME, NEW.gml_id, NEW.beginnt) INTO i;
 
   IF i>0 THEN
     IF ku THEN
