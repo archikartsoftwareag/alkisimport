@@ -7,33 +7,47 @@ DECLARE
   i INTEGER;
   ku BOOLEAN;
   fid VARCHAR;
+  endet VARCHAR;
 BEGIN
   EXECUTE format('SELECT COUNT(*)
                   FROM %I.%I
                   WHERE lower(name) = %L
                   AND lower(value) = %L',
-                  TG_TABLE_SCHEMA,'ak_alkis_options',
-                  'komplettupdate','true')
-                  INTO i;
+                 TG_TABLE_SCHEMA,'ak_alkis_options',
+                 'komplettupdate','true')
+                 INTO i;
   
   ku := i > 0;
 
-  EXECUTE format('SELECT COUNT(*)
+  EXECUTE format('SELECT COUNT(*), COALESCE(MAX(endet),'''')
                   FROM %I.%I
                   WHERE gml_id=%L
-                  AND beginnt=%L
-                  AND endet IS NULL',
-                  TG_TABLE_SCHEMA,TG_TABLE_NAME,
-                  NEW.gml_id,
-                  NEW.beginnt)
-                  INTO i;
+                  AND beginnt=%L',
+                 TG_TABLE_SCHEMA,TG_TABLE_NAME,
+                 NEW.gml_id,
+                 NEW.beginnt)
+                 INTO i, endet;
 
-  IF i>0 THEN
+  IF i > 0 THEN
     IF ku THEN
-      EXECUTE format('INSERT INTO %I.%I (typename, featureid)
-                      VALUES (%L, %L)',
-                      TG_TABLE_SCHEMA,'ak_alkis_komplettupdate',
-                      TG_TABLE_NAME,NEW.gml_id);
+      IF endet = '' THEN
+        EXECUTE format('INSERT INTO %I.%I (typename, featureid)
+                        VALUES (%L, %L)',
+                       TG_TABLE_SCHEMA,'ak_alkis_komplettupdate',
+                       TG_TABLE_NAME,NEW.gml_id);
+      ELSE
+        EXECUTE format('UPDATE %I.%I
+                        SET endet = NULL
+                        WHERE gml_id = %L
+                        AND beginnt = %L',
+                       TG_TABLE_SCHEMA,TG_TABLE_NAME,
+                       NEW.gml_id,
+                       NEW.beginnt);
+        EXECUTE format('INSERT INTO %I.%I (typename, featureid)
+                        VALUES (%L, %L)',
+                       TG_TABLE_SCHEMA,'ak_alkis_insert',
+                       TG_TABLE_NAME,NEW.gml_id);
+      END IF;
     END IF;
     
     RETURN NULL;
@@ -42,17 +56,17 @@ BEGIN
                     FROM %I.%I
                     WHERE gml_id=%L
                     AND endet IS NULL',
-                    TG_TABLE_SCHEMA,TG_TABLE_NAME,
-                    NEW.GML_ID)
-                    INTO i;
+                   TG_TABLE_SCHEMA,TG_TABLE_NAME,
+                   NEW.GML_ID)
+                   INTO i;
     
     IF ku THEN
       IF i > 0 THEN
         fid = NEW.gml_id || translate(NEW.beginnt,'-:','');
         EXECUTE format('INSERT INTO %I.%I (typename, featureid, context, safetoignore, replacedby, endet)
                         VALUES (%L, %L, %L, %L, %L, %L)',
-                        TG_TABLE_SCHEMA,'delete',
-                        TG_TABLE_NAME,NEW.gml_id,'update','false',fid,NEW.beginnt);
+                       TG_TABLE_SCHEMA,'delete',
+                       TG_TABLE_NAME,NEW.gml_id,'update','false',fid,NEW.beginnt);
       END IF;
     END IF;
     
