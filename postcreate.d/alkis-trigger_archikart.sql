@@ -164,3 +164,4 @@ END;
 $$ LANGUAGE plpgsql;
 
 SELECT pg_temp.create_trigger(:alkis_hist);
+DELETE FROM delete;
