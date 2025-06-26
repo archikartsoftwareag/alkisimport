@@ -122,6 +122,15 @@ BEGIN
       END IF;
     END LOOP;
 
+    PERFORM 'UPDATE ax_gemarkung '
+            || 'SET endet = NULL '
+            || 'WHERE EXSITS(SELECT gml_id FROM ax_flurstueck WHERE gemarkungsnummer = gemarkungsnummer AND endet IS NULL) '
+            || 'AND endet IS NOT NULL';
+    PERFORM 'UPDATE ax_buchungsblattbezirk '
+            || 'SET endet = NULL '
+            || 'WHERE EXSITS(SELECT gml_id FROM ax_buchungsblatt WHERE bezirk = bezirk AND endet IS NULL) '
+            || 'AND endet IS NOT NULL';
+
     raise notice 'Historisierung Komplettupdate beendet';
   END IF;
 END;
