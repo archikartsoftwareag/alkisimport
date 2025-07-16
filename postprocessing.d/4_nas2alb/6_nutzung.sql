@@ -161,4 +161,4 @@ INSERT INTO nutz_21(flsnr,pk,nutzsl,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,n
   LEFT JOIN ak_fs_hist h
       ON h.gml_id = f.gml_id
   WHERE f.endet IS NULL OR h.gml_id IS NOT NULL
-  GROUP BY alkis_flsnr(f), f.wkb_geometry, n.nutzung, n.gml_id, f.gml_id, n.name;
+  GROUP BY alkis_flsnr(f), f.wkb_geometry, n.nutzung, n.gml_id, f.gml_id, n.name, n.endet;

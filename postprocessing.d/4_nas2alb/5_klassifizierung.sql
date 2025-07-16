@@ -180,8 +180,8 @@ INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand
   JOIN ax_klassifizierung k
       ON f.wkb_geometry && k.wkb_geometry
       AND alkis_relate(f.wkb_geometry,k.wkb_geometry,'2********','ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id)
-      AND (f.endet IS NULL AND n.endet IS NULL OR (f.endet IS NOT NULL AND n.beginnt < f.endet AND (n.endet IS NULL OR n.endet > f.endet)))
+      AND (f.endet IS NULL AND k.endet IS NULL OR (f.endet IS NOT NULL AND k.beginnt < f.endet AND (k.endet IS NULL OR k.endet > f.endet)))
   LEFT JOIN ak_fs_hist h
       ON h.gml_id = f.gml_id
   WHERE f.endet IS NULL OR h.gml_id IS NOT NULL
-  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl, k.gml_id, f.gml_id, k.name;
+  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl, k.gml_id, f.gml_id, k.name, k.endet;
