@@ -116,9 +116,10 @@ BEGIN
 		   || r.infofeld1 || ' AS infofeld1, '
 		   || r.infofeld2 || ' AS infofeld2, '
 		   || 'beginnt, '
+		   || 'endet, '
 		   || 'wkb_geometry'
 		   || ' FROM ' || r.name
-		   || ' WHERE endet IS NULL'
+		   || ' WHERE (endet IS NULL OR endet > (SELECT value FROM alkis_options WHERE name = ''LastImportDate''))'
 		   ;
 
 		IF r.enumeration IS NOT NULL THEN
@@ -159,7 +160,7 @@ CREATE SEQUENCE klas_3x_pk_seq;
 UPDATE ax_bodenschaetzung SET bodenzahlodergruenlandgrundzahl=NULL WHERE bodenzahlodergruenlandgrundzahl IN ('nicht belegt','');
 
 DELETE FROM klas_3x;
-INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,klas_gml_id,fs_gml_id)
+INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,klas_gml_id,klas_endet,fs_gml_id)
   SELECT
     alkis_flsnr(f) AS flsnr,
     to_hex(nextval('klas_3x_pk_seq'::regclass)) AS pk,
@@ -173,10 +174,14 @@ INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand
     0 AS ff_stand,
     k.name AS typ_name,
     k.gml_id AS klas_gml_id,
+    k.endet AS klas_endet,
     f.gml_id AS fs_gml_id
   FROM ax_flurstueck f
   JOIN ax_klassifizierung k
       ON f.wkb_geometry && k.wkb_geometry
       AND alkis_relate(f.wkb_geometry,k.wkb_geometry,'2********','ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id)
-  WHERE f.endet IS NULL
-  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl, k.gml_id, f.gml_id, k.name;
+      AND (f.endet IS NULL AND k.endet IS NULL OR (f.endet IS NOT NULL AND k.beginnt < f.endet AND (k.endet IS NULL OR k.endet > f.endet)))
+  LEFT JOIN ak_fs_hist h
+      ON h.gml_id = f.gml_id
+  WHERE f.endet IS NULL OR h.gml_id IS NOT NULL
+  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl, k.gml_id, f.gml_id, k.name, k.endet;
