@@ -7,7 +7,8 @@ INSERT INTO ak_fs_fuellfl_umfang_nutz_klass(fs_gml_id,fuellfl_umfang,wkb_geometr
          st_union(st_intersection(f.wkb_geometry,d.wkb_geometry)) AS wkb_fuellflaeche
   FROM ax_flurstueck f
   JOIN klas_3x c ON c.fs_gml_id = f.gml_id
-  JOIN ax_klassifizierung d ON d.gml_id = c.klas_gml_id
-  WHERE f.endet IS NULL
+  JOIN ax_klassifizierung d ON d.gml_id = c.klas_gml_id AND d.endet = c.endet
+  LEFT JOIN ak_fs_hist e ON e.gml_id = f.gml_id
+  WHERE (f.endet IS NULL OR e.gml_id IS NOT NULL)
   AND ASCII(SUBSTRING(c.klf,1,1)) > 96
   GROUP BY f.gml_id;

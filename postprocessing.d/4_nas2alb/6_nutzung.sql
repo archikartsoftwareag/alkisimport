@@ -1,4 +1,4 @@
-﻿SET search_path = :"alkis_schema", :"parent_schema", :"postgis_schema", public;
+SET search_path = :"alkis_schema", :"parent_schema", :"postgis_schema", public;
 
 ---
 --- Nutzungen
@@ -92,9 +92,11 @@ BEGIN
 		   || coalesce('''' || r.attributname2 || '''','NULL') || '::text AS attributname2, '
 		   || coalesce(r.attributfeld2,'NULL') || '::text AS attributwert2, '
 		   || 'beginnt, '
+		   || 'endet, '
 		   || 'wkb_geometry'
 		   || ' FROM ' || r.name
-		   || ' WHERE endet IS NULL AND hatdirektunten IS NULL AND istweiterenutzung IS NULL'
+		   || ' WHERE (endet IS NULL OR endet > (SELECT value FROM alkis_options WHERE name = ''LastImportDate''))'
+		   || ' AND hatdirektunten IS NULL AND istweiterenutzung IS NULL'
 		   ;
 
 		kv := kv
@@ -137,7 +139,7 @@ SELECT alkis_dropobject('nutz_shl_pk_seq');
 CREATE SEQUENCE nutz_shl_pk_seq;
 
 DELETE FROM nutz_21;
-INSERT INTO nutz_21(flsnr,pk,nutzsl,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,nutz_gml_id,fs_gml_id)
+INSERT INTO nutz_21(flsnr,pk,nutzsl,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,nutz_gml_id,nutz_endet,fs_gml_id)
   SELECT
     alkis_flsnr(f) AS flsnr,
     to_hex(nextval('nutz_shl_pk_seq'::regclass)) AS pk,
@@ -149,10 +151,14 @@ INSERT INTO nutz_21(flsnr,pk,nutzsl,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,n
     0 AS ff_stand,
     n.name AS typ_name,
     n.gml_id AS nutz_gml_id,
+    n.endet AS nutz_endet,
     f.gml_id AS fs_gml_id
   FROM ax_flurstueck f
   JOIN ax_tatsaechlichenutzung n
       ON f.wkb_geometry && n.wkb_geometry
       AND alkis_relate(f.wkb_geometry,n.wkb_geometry,'2********','ax_flurstueck:'||f.gml_id||'<=>'||n.name||':'||n.gml_id)
-  WHERE f.endet IS NULL
+      AND (f.endet IS NULL AND n.endet IS NULL OR (f.endet IS NOT NULL AND n.beginnt < f.endet AND (n.endet IS NULL OR n.endet > f.endet)))
+  LEFT JOIN ak_fs_hist h
+      ON h.gml_id = f.gml_id
+  WHERE f.endet IS NULL OR h.gml_id IS NOT NULL
   GROUP BY alkis_flsnr(f), f.wkb_geometry, n.nutzung, n.gml_id, f.gml_id, n.name;
