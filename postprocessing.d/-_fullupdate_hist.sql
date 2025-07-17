@@ -48,7 +48,7 @@ BEGIN
                   AND c.table_name = a.table_name
                   AND c.column_name = ''endet''
                   JOIN information_schema.tables d
-                  ON d.table_schema = a.table_schema 
+                  ON d.table_schema = a.table_schema
                   AND d.table_name = a.table_name
                   AND d.table_type = ''BASE TABLE''
                   WHERE a.table_schema = ''archikart''
