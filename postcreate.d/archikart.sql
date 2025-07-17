@@ -4,7 +4,7 @@ SELECT alkis_dropobject('ak_fs_fuellfl_umfang_klass');
 CREATE TABLE ak_fs_fuellfl_umfang_klass (
 	fs_gml_id character(16),
 	fuellfl_umfang double precision,
-        wkb_geometry geometry,	
+	wkb_geometry geometry,
 	primary key (fs_gml_id)
 );
 COMMENT ON TABLE ak_fs_fuellfl_umfang_klass IS 'ARCHIKART: Füllflächenumfang Flurstücke - K0003AXAbschnittKF';
@@ -14,7 +14,7 @@ SELECT alkis_dropobject('ak_fs_fuellfl_umfang_nutz_klass');
 CREATE TABLE ak_fs_fuellfl_umfang_nutz_klass (
 	fs_gml_id character(16),
 	fuellfl_umfang double precision,
-        wkb_geometry geometry,	
+	wkb_geometry geometry,
 	primary key (fs_gml_id)
 );
 COMMENT ON TABLE ak_fs_fuellfl_umfang_nutz_klass IS 'ARCHIKART: Füllflächenumfang Flurstücke - K0003AXAbschnittNK';
@@ -24,7 +24,7 @@ SELECT alkis_dropobject('ak_fs_fuellfl_umfang_nutz');
 CREATE TABLE ak_fs_fuellfl_umfang_nutz(
 	fs_gml_id character(16),
 	fuellfl_umfang double precision,
-        wkb_geometry geometry,		
+	wkb_geometry geometry,
 	primary key (fs_gml_id)
 );
 COMMENT ON TABLE ak_fs_fuellfl_umfang_nutz IS 'ARCHIKART: Füllflächenumfang Flurstücke - K0003AXAbschnitt';
@@ -38,8 +38,7 @@ CREATE TABLE ak_alkis_options (
 	value varchar NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_ak_alkis_options_name 
-ON ak_alkis_options (name);
+CREATE INDEX idx_ak_alkis_options_name ON ak_alkis_options (name);
 
 SELECT alkis_dropobject('alkis_komplettupdate');
 SELECT alkis_dropobject('ak_alkis_komplettupdate');
@@ -49,10 +48,8 @@ CREATE TABLE ak_alkis_komplettupdate (
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_ak_alkis_komplettupdate_typename 
-ON ak_alkis_komplettupdate (typename);
-CREATE INDEX idx_ak_alkis_komplettupdate_featureid 
-ON ak_alkis_komplettupdate (featureid);
+CREATE INDEX idx_ak_alkis_komplettupdate_typename ON ak_alkis_komplettupdate (typename);
+CREATE INDEX idx_ak_alkis_komplettupdate_featureid ON ak_alkis_komplettupdate (featureid);
 
 SELECT alkis_dropobject('alkis_insert');
 SELECT alkis_dropobject('ak_alkis_insert');
@@ -62,10 +59,8 @@ CREATE TABLE ak_alkis_insert (
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
-CREATE INDEX idx_ak_alkis_insert_typename 
-ON ak_alkis_insert (typename);
-CREATE INDEX idx_ak_alkis_insert_featureid 
-ON ak_alkis_insert (featureid);
+CREATE INDEX idx_ak_alkis_insert_typename ON ak_alkis_insert (typename);
+CREATE INDEX idx_ak_alkis_insert_featureid ON ak_alkis_insert (featureid);
 
 SELECT alkis_dropobject('ak_object_not_found');
 CREATE TABLE ak_object_not_found (
@@ -75,6 +70,9 @@ CREATE TABLE ak_object_not_found (
 	featureid character(16) NOT NULL,
 	PRIMARY KEY (id)
 );
+
+CREATE INDEX idx_ak_object_not_found_typename ON ak_object_not_found (typename);
+CREATE INDEX idx_ak_object_not_found_featureid ON ak_object_not_found (featureid);
 
 SELECT alkis_dropobject('alkis_fs_fuellfl_geom');
 CREATE OR REPLACE function ak_alkis_fs_fuellfl_geom(fs_id varchar, join_table varchar) RETURNS geometry
