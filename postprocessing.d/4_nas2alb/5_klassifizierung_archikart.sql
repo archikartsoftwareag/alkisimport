@@ -119,7 +119,7 @@ BEGIN
 		   || 'endet, '
 		   || 'wkb_geometry'
 		   || ' FROM ' || r.name
-		   || ' WHERE (endet IS NULL OR endet > (SELECT value FROM alkis_options WHERE name = ''LastImportDate''))'
+		   || ' WHERE (endet IS NULL OR endet > (SELECT value FROM ak_alkis_options WHERE name = ''LastImportDate''))'
 		   ;
 
 		IF r.enumeration IS NOT NULL THEN
