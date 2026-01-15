@@ -159,3 +159,18 @@ BEGIN
   RETURN is_empty;
 END;
 $$ SET search_path TO archikart, public;
+
+CREATE OR REPLACE FUNCTION ak_alkis_difference(g0 geometry, g1 geometry, error text) RETURNS geometry
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  res geometry;
+BEGIN
+  SELECT st_difference(g0,g1) INTO res;
+  RETURN res;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'st_difference-Ausnahme bei: %: %',error,SQLERRM;
+  RETURN NULL;
+END;
+$$ SET search_path TO archikart, public;
