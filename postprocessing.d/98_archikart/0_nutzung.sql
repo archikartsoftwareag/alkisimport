@@ -4,8 +4,8 @@ DELETE FROM ak_fs_fuellfl_umfang_nutz;
 INSERT INTO ak_fs_fuellfl_umfang_nutz(fs_gml_id, fuellfl_umfang, wkb_geometry)
   SELECT fs_gml_id, fuellfl_umfang, wkb_fuellflaeche FROM (
     SELECT f.gml_id AS fs_gml_id,
-           st_perimeter2d(ak_alkis_difference(max(f.wkb_geometry),st_union(st_intersection(f.wkb_geometry,d.wkb_geometry)))) AS fuellfl_umfang,
-           st_union(st_intersection(f.wkb_geometry,d.wkb_geometry)) AS wkb_fuellflaeche
+           st_perimeter2d(ak_alkis_difference(max(f.wkb_geometry),st_union(st_intersection(f.wkb_geometry,d.wkb_geometry)),'ax_flurstueck: '||f.gml_id)) AS fuellfl_umfang,
+           st_union(st_intersection(f.wkb_geometry,d.wkb_geometry)) AS wkb_fuellflaeche,
            st_area(max(f.wkb_geometry)) AS fs_fl,
            st_area(st_union(st_intersection(f.wkb_geometry,d.wkb_geometry))) AS nutz_fl
     FROM ax_flurstueck f
