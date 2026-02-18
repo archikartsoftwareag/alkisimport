@@ -8,9 +8,15 @@ inotifywait -mq -e create -e modify --format %f "$directory" |
 while read line
 do
 	if [ "$line" = "$filename" ] ; then
-		pid=$(pgrep inotify -a | grep "$directory")
+		pid=$(pgrep -a inotify | grep "$directory")
 		pid=${pid%% *}
 		kill $pid
+		sleep 5
+		count=$(pgrep inotify | grep -c $pid)
+		
+		if [[ $count > 0 ]] ; then
+			kill -9 $pid
+		fi
 	else
 		echo "$line / $(cat "$directory/$line")"
 	fi
