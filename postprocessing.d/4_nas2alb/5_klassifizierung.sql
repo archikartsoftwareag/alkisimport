@@ -6,62 +6,24 @@ SET search_path = :"alkis_schema", :"parent_schema", :"postgis_schema", public;
 
 SELECT alkis_dropobject('alkis_klassifizierungen');
 CREATE TABLE alkis_klassifizierungen(
-	name VARCHAR PRIMARY KEY,
+	name VARCHAR,
 	kennung VARCHAR,
 	funktionsfeld VARCHAR,
 	prefix VARCHAR,
 	ackerzahl VARCHAR,
 	bodenzahl VARCHAR,
 	enumeration VARCHAR,
-	bodenklasse VARCHAR,
-	entstehungsart VARCHAR,
-	sonstigeangaben VARCHAR,
-	zustandsstufe VARCHAR,
-	infofeld1 VARCHAR,
-	infofeld2 VARCHAR
+	PRIMARY KEY(name,funktionsfeld)
 );
 
-INSERT INTO alkis_klassifizierungen(
-name, kennung, prefix, funktionsfeld, bodenzahl, ackerzahl, enumeration, 
-bodenklasse, entstehungsart, sonstigeangaben, zustandsstufe, 
-infofeld1, infofeld2) 
-VALUES
-('ax_bodenschaetzung', '72001', 'b', 'bodenart', 'bodenzahlodergruenlandgrundzahl', 'ackerzahlodergruenlandzahl', 'ax_nutzungsart_bodenschaetzung',
- 'bodenart', 'translate(entstehungsart::text,''{}'','''')', 'translate(sonstigeangaben::text,''{}'','''')', 'zustandsstufe',
- 'NULL::varchar', 'NULL::varchar'),
-('ax_musterundvergleichsstueck', '72002', 'm', 'bodenart', 'bodenzahlodergruenlandgrundzahl', 'ackerzahlodergruenlandzahl', 'ax_nutzungsart_musterundvergleichsstueck',
- 'bodenart', 'translate(entstehungsart::text,''{}'','''')', 'translate(sonstigeangaben::text,''{}'','''')', 'zustandsstufe',
- 'NULL::varchar', 'NULL::varchar'),
-('ax_bewertung', '72004', 'B', 'klassifizierung', 'NULL::varchar', 'NULL::varchar', 'ax_klassifizierung_bewertung',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'NULL::varchar', 'NULL::varchar'),
-('ax_klassifizierungnachwasserrecht', '71003', 'W', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_klassifizierungnachwasserrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'bezeichnung'),
-('ax_anderefestlegungnachwasserrecht', '71004', 'W1', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_anderefestlegungnachwasserrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'nummer'),
-('ax_klassifizierungnachstrassenrecht', '71001', 'S', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_klassifizierungnachstrassenrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'bezeichnung'),
-('ax_anderefestlegungnachstrassenrecht', '71002', 'S1', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_anderefestlegungnachstrassenrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'nummer'),
-('ax_naturumweltoderbodenschutzrecht', '71006', 'BS', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_naturumweltoderbodenschutzrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'name'),
-('ax_bauraumoderbodenordnungsrecht', '71008', 'BO', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_bauraumoderbodenordnungsrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'nullif(concat_ws(''; '',''Name: '' || name, ''Bezeichnung: '' || bezeichnung, ''Datum: '' || datumrechtskraeftig),'''')'),
-('ax_denkmalschutzrecht', '71009', 'DS', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_denkmalschutzrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'bezeichnung'),
-('ax_forstrecht', '71010', 'F', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar','ax_artderfestlegung_forstrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'bezeichnung'),
-('ax_sonstigesrecht', '71011', 'SO', 'artderfestlegung', 'NULL::varchar', 'NULL::varchar', 'ax_artderfestlegung_sonstigesrecht',
- 'NULL::integer', 'NULL::integer[]', 'NULL::integer[]', 'NULL::integer',
- 'coalesce(land || stelle)', 'name');
+INSERT INTO alkis_klassifizierungen(name, kennung, prefix, funktionsfeld, bodenzahl, ackerzahl, enumeration) VALUES
+	('ax_bodenschaetzung',			'72001', 'b', 'nutzungsart',		'bodenzahlodergruenlandgrundzahl',	'ackerzahlodergruenlandzahl',	'ax_nutzungsart_bodenschaetzung'),
+	('ax_bodenschaetzung',			'72001', 'a', 'bodenart',		'NULL::varchar',			'NULL::varchar',		'ax_bodenart_bodenschaetzung'),
+	('ax_bodenschaetzung',			'72001', 'k', 'klimastufe',		'NULL::varchar', 			'NULL::varchar',		'ax_klimastufe'),
+	('ax_bodenschaetzung',			'72001', 'w', 'wasserverhaeltnisse',	'NULL::varchar', 			'NULL::varchar',		'ax_wasserverhaeltnisse'),
+	('ax_bewertung',			'72004', 'B', 'klassifizierung',	'NULL::varchar',			'NULL::varchar',		'ax_klassifizierung_bewertung'),
+	('ax_klassifizierungnachwasserrecht',	'71003', 'W', 'artderfestlegung',	'NULL::varchar',			'NULL::varchar',		'ax_artderfestlegung_klassifizierungnachwasserrecht'),
+	('ax_klassifizierungnachstrassenrecht',	'71001', 'S', 'artderfestlegung',	'NULL::varchar',			'NULL::varchar',		'ax_artderfestlegung_klassifizierungnachstrassenrecht');
 
 SELECT alkis_dropobject('alkis_createklassifizierung');
 CREATE FUNCTION pg_temp.alkis_createklassifizierung() RETURNS varchar AS $$
@@ -87,13 +49,7 @@ BEGIN
 			prefix,
 			bodenzahl,
 			ackerzahl,
-			enumeration,
-			bodenklasse,
-			entstehungsart,
-			sonstigeangaben,
-			zustandsstufe,
-			infofeld1,
-			infofeld2
+			enumeration
 		FROM alkis_klassifizierungen
 	LOOP
 		res := alkis_string_append(res, alkis_fixareas(r.name));
@@ -101,21 +57,14 @@ BEGIN
 		nv := nv
 		   || d
 		   || 'SELECT '
-		   || 'ogc_fid*32+' || i || ' AS ogc_fid, '
-		   || '''' || r.name    || '''::text AS name, '
-		   || 'gml_id, '
-		   || alkis_toint(r.kennung) || ' AS kennung, '
-		   || r.funktionsfeld || ' AS artderfestlegung, '
-		   || r.bodenzahl || ' AS bodenzahl, '
-		   || r.ackerzahl || ' AS ackerzahl, '
-		   || '''' || r.prefix || ':'' || ' || r.funktionsfeld || ' AS klassifizierung, '
-		   || r.bodenklasse || ' AS bodenklasse, '
-		   || r.entstehungsart || '::text AS entstehungsart, '
-		   || r.sonstigeangaben || '::text AS sonstigeangaben, '
-		   || r.zustandsstufe || ' AS zustandsstufe, '
-		   || r.infofeld1 || ' AS infofeld1, '
-		   || r.infofeld2 || ' AS infofeld2, '
-		   || 'beginnt, '
+		   || 'ogc_fid*4+' || i || ' AS ogc_fid,'
+		   || '''' || r.name    || '''::text AS name,'
+		   || 'gml_id,'
+		   || alkis_toint(r.kennung) || ' AS kennung,'
+		   || r.funktionsfeld || ' AS artderfestlegung,'
+		   || r.bodenzahl || ' AS bodenzahl,'
+		   || r.ackerzahl || ' AS ackerzahl,'
+		   || '''' || r.prefix || ':''||' || r.funktionsfeld || ' AS klassifizierung,'
 		   || 'wkb_geometry'
 		   || ' FROM ' || r.name
 		   || ' WHERE endet IS NULL'
@@ -159,7 +108,7 @@ CREATE SEQUENCE klas_3x_pk_seq;
 UPDATE ax_bodenschaetzung SET bodenzahlodergruenlandgrundzahl=NULL WHERE bodenzahlodergruenlandgrundzahl IN ('nicht belegt','');
 
 DELETE FROM klas_3x;
-INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand,typ_name,klas_gml_id,fs_gml_id)
+INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,fl,ff_entst,ff_stand)
   SELECT
     alkis_flsnr(f) AS flsnr,
     to_hex(nextval('klas_3x_pk_seq'::regclass)) AS pk,
@@ -167,16 +116,12 @@ INSERT INTO klas_3x(flsnr,pk,klf,wertz1,wertz2,gemfl,umfang,fl,ff_entst,ff_stand
     k.bodenzahl,
     k.ackerzahl,
      sum(st_area(alkis_intersection(f.wkb_geometry,k.wkb_geometry,'ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id))) AS gemfl,
-     sum(st_perimeter2d(alkis_intersection(f.wkb_geometry,k.wkb_geometry,'ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id))) AS umfang,
     (sum(st_area(alkis_intersection(f.wkb_geometry,k.wkb_geometry,'ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id)))*amtlicheflaeche/NULLIF(st_area(f.wkb_geometry),0))::int AS fl,
     0 AS ff_entst,
-    0 AS ff_stand,
-    k.name AS typ_name,
-    k.gml_id AS klas_gml_id,
-    f.gml_id AS fs_gml_id
+    0 AS ff_stand
   FROM ax_flurstueck f
   JOIN ax_klassifizierung k
       ON f.wkb_geometry && k.wkb_geometry
       AND alkis_relate(f.wkb_geometry,k.wkb_geometry,'2********','ax_flurstueck:'||f.gml_id||'<=>'||k.name||':'||k.gml_id)
   WHERE f.endet IS NULL
-  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl, k.gml_id, f.gml_id, k.name;
+  GROUP BY alkis_flsnr(f), f.amtlicheflaeche, f.wkb_geometry, k.klassifizierung, k.bodenzahl, k.ackerzahl;
